@@ -1,0 +1,19 @@
+{
+  "format_version": "1.1",
+  "package_name": "infra/tools/luci/cas/mac-arm64",
+  "version_file": ".versions/cas.cipd_version",
+  "actual_install_mode": "copy",
+  "files": [
+    {
+      "name": "cas",
+      "size": 26770402,
+      "executable": true,
+      "hash": "LKirwyinrLGa1iXk-MspQqLEQ_A2YmzBZbAuR9JJ3VwC"
+    },
+    {
+      "name": ".versions/cas.cipd_version",
+      "size": 119,
+      "hash": "BsKgjtvucKcWfxwUKkJKHEd5oEAg9FFiMhvZHv_hXN0C"
+    }
+  ]
+}

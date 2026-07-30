@@ -1,0 +1,4 @@
+{
+  "subdir": "src/third_party/devtools-frontend/src/third_party/rollup_libs",
+  "package_name": "infra/3pp/tools/rollup_libs/mac-arm64"
+}

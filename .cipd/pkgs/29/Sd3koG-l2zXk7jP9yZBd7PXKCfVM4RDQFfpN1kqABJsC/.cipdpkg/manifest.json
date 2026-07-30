@@ -1,0 +1,19 @@
+{
+  "format_version": "1.1",
+  "package_name": "infra/tools/luci/isolate/mac-arm64",
+  "version_file": ".versions/isolate.cipd_version",
+  "actual_install_mode": "copy",
+  "files": [
+    {
+      "name": "isolate",
+      "size": 24136162,
+      "executable": true,
+      "hash": "CuNaWC_1Jj8O1ZixQ066PNAgYvFefsQsPmhV0G5tx5MC"
+    },
+    {
+      "name": ".versions/isolate.cipd_version",
+      "size": 123,
+      "hash": "fEBgO7cy33cjP0dDLD54vhIIq3-B3Sct4vTkz4WGF0QC"
+    }
+  ]
+}

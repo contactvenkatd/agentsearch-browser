@@ -1,0 +1,19 @@
+{
+  "format_version": "1.1",
+  "package_name": "build/siso/mac-arm64",
+  "version_file": ".versions/siso.cipd_version",
+  "actual_install_mode": "copy",
+  "files": [
+    {
+      "name": "siso",
+      "size": 60475906,
+      "executable": true,
+      "hash": "F5pJlOGIDvAPjI2DsSJU9PROegjloClENFtoVesSCfsC"
+    },
+    {
+      "name": ".versions/siso.cipd_version",
+      "size": 109,
+      "hash": "DIoOTOJDngUn9Bq8kpT4XG21R-yVkxPpAxZJMLq4qJ4C"
+    }
+  ]
+}

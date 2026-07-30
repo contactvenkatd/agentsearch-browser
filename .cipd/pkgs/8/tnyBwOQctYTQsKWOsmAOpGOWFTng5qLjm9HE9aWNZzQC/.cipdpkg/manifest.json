@@ -1,0 +1,14 @@
+{
+  "format_version": "1.1",
+  "package_name": "infra/3pp/tools/rollup_libs/mac-arm64",
+  "install_mode": "copy",
+  "actual_install_mode": "copy",
+  "files": [
+    {
+      "name": "rollup.darwin-arm64.node",
+      "size": 1763824,
+      "executable": true,
+      "hash": "oWrRMrlv0mulmuK94rl95rcpvWZbjps2sl0pAaHGiVEC"
+    }
+  ]
+}

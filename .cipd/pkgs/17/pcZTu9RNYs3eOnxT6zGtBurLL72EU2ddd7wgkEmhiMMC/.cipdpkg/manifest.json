@@ -1,0 +1,601 @@
+{
+  "format_version": "1.1",
+  "package_name": "chromium/third_party/typescript/linux-amd64",
+  "install_mode": "copy",
+  "actual_install_mode": "copy",
+  "files": [
+    {
+      "name": ".3pp/chromium/third_party/typescript/linux-amd64/3pp.pb",
+      "size": 823,
+      "hash": "vmSdo7nYXbP2qZEkD5-J1dyi8Bew_sQcVJRkvsx-K04C"
+    },
+    {
+      "name": ".3pp/chromium/third_party/typescript/linux-amd64/install.sh",
+      "size": 367,
+      "executable": true,
+      "hash": "6u3-PDUXj94hd0rqFR9KE3pbX4Gore6mMu6dykPybC0C"
+    },
+    {
+      "name": ".3pp/chromium/third_party/typescript/linux-amd64/patches/typescript_native_preview.patch",
+      "size": 2747,
+      "hash": "ABUN0uSUS-NTl3Y5vNExN4bZ-DnoTxVkypg9hB2rAN4C"
+    },
+    {
+      "name": ".dockerbuild/bin/dockcross-manylinux-x64-py3.11-v3",
+      "size": 7079,
+      "executable": true,
+      "hash": "NlKmOnWDz58kDJc42XjvKhbF7rHBFH3cfIXkjjBJZXUC"
+    },
+    {
+      "name": "LICENSE",
+      "size": 9197,
+      "hash": "p9AL_VRSW8aUtuMvZMfrz15reuNle-XMEnZ7znRlSkcC"
+    },
+    {
+      "name": "NOTICE.txt",
+      "size": 48860,
+      "hash": "OLjCI6ZwvBGqVehMzos2ueQyRSxXNacnGL7Dl5cRRP4C"
+    },
+    {
+      "name": "README.md",
+      "size": 138,
+      "hash": "IpeEveWhsR8BsA66Zlwuvf4-21OM_1SJAIPDUgBWFgUC"
+    },
+    {
+      "name": "lib/lib.d.ts",
+      "size": 953,
+      "hash": "DmR35QSeV5zF3nQacKyRI1JS7cBGiy5WnyLenbM1d4YC"
+    },
+    {
+      "name": "lib/lib.decorators.d.ts",
+      "size": 13153,
+      "hash": "HOFLgcXMghmUqo7B1CsiDdQbJ_zAY3O845WK90Ibd9QC"
+    },
+    {
+      "name": "lib/lib.decorators.legacy.d.ts",
+      "size": 1287,
+      "hash": "s6BIs-kwLvmjTvTrua7Psotmq7O85Xcgann-5VnCMNoC"
+    },
+    {
+      "name": "lib/lib.dom.asynciterable.d.ts",
+      "size": 933,
+      "hash": "f1f8RAT_AgvEW5xiCv8rQPcAuV_jEWQCTEU6XjwWPFQC"
+    },
+    {
+      "name": "lib/lib.dom.d.ts",
+      "size": 2350034,
+      "hash": "1WsnPLimBzdPqbtXCHA0RTuVql-nGwaNSQfDhNYrxZwC"
+    },
+    {
+      "name": "lib/lib.dom.iterable.d.ts",
+      "size": 933,
+      "hash": "f1f8RAT_AgvEW5xiCv8rQPcAuV_jEWQCTEU6XjwWPFQC"
+    },
+    {
+      "name": "lib/lib.es2015.collection.d.ts",
+      "size": 5305,
+      "hash": "EFuo_3unRkBP4aLhidHT0uDrKaCMGN3teRrwLyn7RxEC"
+    },
+    {
+      "name": "lib/lib.es2015.core.d.ts",
+      "size": 22824,
+      "hash": "6tz_2iqoSALHOTjlibnlgkjXTFnLf8vKZHTjQ1rBVQQC"
+    },
+    {
+      "name": "lib/lib.es2015.d.ts",
+      "size": 1202,
+      "hash": "P4i-2-sJxvWmZFyyTHxV8aoi0ZrpbI5pWcvYuFpwe8YC"
+    },
+    {
+      "name": "lib/lib.es2015.generator.d.ts",
+      "size": 2518,
+      "hash": "ADQ8pbLj1I-l3x224y6ipZr6sJWQJ0pszLHbroLmDHwC"
+    },
+    {
+      "name": "lib/lib.es2015.iterable.d.ts",
+      "size": 18185,
+      "hash": "69n4FtQAJpfLKGS-ofC3ChAxJOGKjNlkXuzMCb34CrQC"
+    },
+    {
+      "name": "lib/lib.es2015.promise.d.ts",
+      "size": 3161,
+      "hash": "LBr6wwoBdyzSqaKYp853BrWJLkR7tGvb7vcg97Xad60C"
+    },
+    {
+      "name": "lib/lib.es2015.proxy.d.ts",
+      "size": 5212,
+      "hash": "ewIl9IPk-mhWJevkPdWEu3lzu9hOZqa6e74XXuEEi08C"
+    },
+    {
+      "name": "lib/lib.es2015.reflect.d.ts",
+      "size": 6454,
+      "hash": "wKS4rGznRnnB2is3lSlvWJbjHDjoiEaajg-Z3DMF3mAC"
+    },
+    {
+      "name": "lib/lib.es2015.symbol.d.ts",
+      "size": 1610,
+      "hash": "MISntfVpCI4BRlM6AIMOIGVl3mXK4iOVCRaLEUNM2E8C"
+    },
+    {
+      "name": "lib/lib.es2015.symbol.wellknown.d.ts",
+      "size": 10971,
+      "hash": "xQecU_DxQaBpj6qQPnbLQc1mTj77AcwXpcRuwusL70IC"
+    },
+    {
+      "name": "lib/lib.es2016.array.include.d.ts",
+      "size": 5165,
+      "hash": "Msr7xITeprCrYs-EcxgrvLIwINcIRbQG-At1JvOK6GIC"
+    },
+    {
+      "name": "lib/lib.es2016.d.ts",
+      "size": 926,
+      "hash": "f-k7ObgQ6t2Ra-jbiA3X8PcBKlzG_7Yt6PYqIRf6bx8C"
+    },
+    {
+      "name": "lib/lib.es2016.full.d.ts",
+      "size": 993,
+      "hash": "Ga2t_1FE-Pif7woQspnXqWIG9JE9TBfUhkFxMg6e29YC"
+    },
+    {
+      "name": "lib/lib.es2016.intl.d.ts",
+      "size": 1445,
+      "hash": "_KTNy21sXvGKhpAD0CyfD9ld-M-vbrQxzTN2vANMrTYC"
+    },
+    {
+      "name": "lib/lib.es2017.arraybuffer.d.ts",
+      "size": 876,
+      "hash": "uT7IgRXemp3BtgIpG4W6-CXIVma_JZhcxfaYBziStGcC"
+    },
+    {
+      "name": "lib/lib.es2017.d.ts",
+      "size": 1123,
+      "hash": "uwB0zAi4SiN0rzPYvwRLgIUczJ5xml4gLqz0DbLDFgAC"
+    },
+    {
+      "name": "lib/lib.es2017.date.d.ts",
+      "size": 1877,
+      "hash": "9cBtzD_oSfyyl8JHhloWH5lcwp3nqoI6_ddaqt3BQZsC"
+    },
+    {
+      "name": "lib/lib.es2017.full.d.ts",
+      "size": 993,
+      "hash": "g2NfkS1BTQxahV-6PhhBjp235zwuDhcACcSCdcyMGjYC"
+    },
+    {
+      "name": "lib/lib.es2017.intl.d.ts",
+      "size": 1410,
+      "hash": "x7NUIUZzQ0LkQKhLITOEv6GIg1U33b2lDTB2bwWTr_kC"
+    },
+    {
+      "name": "lib/lib.es2017.object.d.ts",
+      "size": 2434,
+      "hash": "t34WESEnpLFp7wuMOk1zDt9FnF8l_lLV5DamkZIGxNcC"
+    },
+    {
+      "name": "lib/lib.es2017.sharedmemory.d.ts",
+      "size": 7170,
+      "hash": "-__ZM3FG7_gix8AKy7eLAep-ojmH9slh66aJNJ50T4wC"
+    },
+    {
+      "name": "lib/lib.es2017.string.d.ts",
+      "size": 2339,
+      "hash": "qZXA5JtyExL3T9-4nkuim9mCTHcLu0Ah100r9WDkxr0C"
+    },
+    {
+      "name": "lib/lib.es2017.typedarrays.d.ts",
+      "size": 1503,
+      "hash": "zmGA-hmxzM0H7n99u5o2esGcDtFgVz5GhkJQYLbff1cC"
+    },
+    {
+      "name": "lib/lib.es2018.asyncgenerator.d.ts",
+      "size": 2653,
+      "hash": "PwLiR2vMudviEoDWCQ8N8X0vZrdHEUiUFaiqTfc8lnUC"
+    },
+    {
+      "name": "lib/lib.es2018.asynciterable.d.ts",
+      "size": 2218,
+      "hash": "ReOrNMHAE8irLcG6TIDHgHRLE7VnaACuLjvieuhixAwC"
+    },
+    {
+      "name": "lib/lib.es2018.d.ts",
+      "size": 1049,
+      "hash": "Gn2uvk9F-wPZ7FPWAAj7-axFppf9yJ5M4hi8lLlPlNYC"
+    },
+    {
+      "name": "lib/lib.es2018.full.d.ts",
+      "size": 1035,
+      "hash": "Y3h9vgQUH10-vOLgi2S8m7pYm-sKTSLnmU0wBa8eSKYC"
+    },
+    {
+      "name": "lib/lib.es2018.intl.d.ts",
+      "size": 2982,
+      "hash": "gFyG9syo13AqYqhEhW26oqP9Kr7wU25l1IcyRB3eW1sC"
+    },
+    {
+      "name": "lib/lib.es2018.promise.d.ts",
+      "size": 1314,
+      "hash": "5C45fxpad5lPAYX9FGZSBpFFbHctBr-EPlCEzrh5oK0C"
+    },
+    {
+      "name": "lib/lib.es2018.regexp.d.ts",
+      "size": 1193,
+      "hash": "9MK0H5DJWxxTLsyHS9PBEYZXk7I668wcPLurzV12_7AC"
+    },
+    {
+      "name": "lib/lib.es2019.array.d.ts",
+      "size": 3124,
+      "hash": "qyYZHPrVtmr6Ebi_k17xzYj6v8so0wst-m-th30FAzIC"
+    },
+    {
+      "name": "lib/lib.es2019.d.ts",
+      "size": 1032,
+      "hash": "-UsTOjyxSiiIA75UWsJoPg0P9mYbzTfjGqrsVPw4Ku0C"
+    },
+    {
+      "name": "lib/lib.es2019.full.d.ts",
+      "size": 1035,
+      "hash": "496ECUhbDBmKWgdb1KHQbY9C3FKzd3CdM7ExuX3lZFYC"
+    },
+    {
+      "name": "lib/lib.es2019.intl.d.ts",
+      "size": 919,
+      "hash": "aJ2hb0bmR87w1ksN74iRDoGKWHfKU3nt4VbKOvt4CsMC"
+    },
+    {
+      "name": "lib/lib.es2019.object.d.ts",
+      "size": 1434,
+      "hash": "IIi8JlMeOPsF7trClRSA21MJ9r4_pKCNIiGrsPW0IA0C"
+    },
+    {
+      "name": "lib/lib.es2019.string.d.ts",
+      "size": 1489,
+      "hash": "y502bEJf6nlxao-zrw145rIuu6s71k0lBjtC3J9THB4C"
+    },
+    {
+      "name": "lib/lib.es2019.symbol.d.ts",
+      "size": 967,
+      "hash": "UAk0qAicJtV-vbaI_JdXOJu2IHo8jwZ01o76kA0quzQC"
+    },
+    {
+      "name": "lib/lib.es2020.bigint.d.ts",
+      "size": 38258,
+      "hash": "vCHMi2_uT0wkQNCANbfqPAazURMUyLq2vvepLeWKJZMC"
+    },
+    {
+      "name": "lib/lib.es2020.d.ts",
+      "size": 1162,
+      "hash": "9Z0GUHmfh4L9dM9zwZIjcwxtG5GYZxscWzo44RiLWVMC"
+    },
+    {
+      "name": "lib/lib.es2020.date.d.ts",
+      "size": 2917,
+      "hash": "fKU9E9KVcAOrtHkipxhmunyyBo-NFUh3xZbWPDWf7SUC"
+    },
+    {
+      "name": "lib/lib.es2020.full.d.ts",
+      "size": 1035,
+      "hash": "V3zEm-GXl4KlppW0YElWbRI-KnU4LxC7gvLlyH4pBZoC"
+    },
+    {
+      "name": "lib/lib.es2020.intl.d.ts",
+      "size": 22399,
+      "hash": "SJFfMnzR3qTXvTWNncdzL1j54WJqKcwMBcjGkkGdm7cC"
+    },
+    {
+      "name": "lib/lib.es2020.number.d.ts",
+      "size": 1548,
+      "hash": "t7-Td3IyA7WmpLkgFk3yLVakP1kyabpq4f3Jd3S2iFUC"
+    },
+    {
+      "name": "lib/lib.es2020.promise.d.ts",
+      "size": 1764,
+      "hash": "VHJfjE3z2QDLTayEtkaJzilUjaC06bfC3mHUHHkpNhEC"
+    },
+    {
+      "name": "lib/lib.es2020.sharedmemory.d.ts",
+      "size": 5089,
+      "hash": "5VlLwwdqwp5sHr2neTm8TIgz3nL2VLbjdoYsBHMZkyMC"
+    },
+    {
+      "name": "lib/lib.es2020.string.d.ts",
+      "size": 2451,
+      "hash": "Lz6zMsLXPnKfM2T8wMKzdecqEh6BV9JagtZ6E4yDqVwC"
+    },
+    {
+      "name": "lib/lib.es2020.symbol.wellknown.d.ts",
+      "size": 1566,
+      "hash": "b0Qn-WQs6NUAlw5OadE5f2QHKrc7l-R2tAAqZGrHQ7EC"
+    },
+    {
+      "name": "lib/lib.es2021.d.ts",
+      "size": 997,
+      "hash": "ihW0YH2aSZ4tvu2ewNPA1zcshQstXx-yWej21B1GioQC"
+    },
+    {
+      "name": "lib/lib.es2021.full.d.ts",
+      "size": 1035,
+      "hash": "5KcOrX_qB9mr5SDMnjDASsA1686qso-eZyEWEABsZd4C"
+    },
+    {
+      "name": "lib/lib.es2021.intl.d.ts",
+      "size": 8206,
+      "hash": "qRekmslM0mt1SrhOETNpp10aR6cQZh180l6WHMeXBl8C"
+    },
+    {
+      "name": "lib/lib.es2021.promise.d.ts",
+      "size": 2223,
+      "hash": "25cJaI-CyeX2WhGcZNg1-Qbv5fVZ0IsRZC1W64W3k1cC"
+    },
+    {
+      "name": "lib/lib.es2021.string.d.ts",
+      "size": 1553,
+      "hash": "SyW4yHSs0aTPhETDYX4DfURNGQgKyfY0tAVYP9EM4fcC"
+    },
+    {
+      "name": "lib/lib.es2021.weakref.d.ts",
+      "size": 3132,
+      "hash": "N75X18kM8fgRLuJjagaNj9GBKJ-Ct0QWDsVqfcFYqfUC"
+    },
+    {
+      "name": "lib/lib.es2022.array.d.ts",
+      "size": 4637,
+      "hash": "bTJhut63hD0VfvPm9dFCfQ7rCvDPnfhKYs_Sn9R6yG4C"
+    },
+    {
+      "name": "lib/lib.es2022.d.ts",
+      "size": 1069,
+      "hash": "JuD-FLruThJ_Q2XRrgsnb0AFYuReGeNf0tTClmhHFeYC"
+    },
+    {
+      "name": "lib/lib.es2022.error.d.ts",
+      "size": 2340,
+      "hash": "GV2splHd4i8hZ6wNCgXiFTCBGaMQD15iaOgxfQWpJSYC"
+    },
+    {
+      "name": "lib/lib.es2022.full.d.ts",
+      "size": 1035,
+      "hash": "AaMPnoWCs2kHXAgI33ESHmhVywb9jT05UR2eu2ZAUgUC"
+    },
+    {
+      "name": "lib/lib.es2022.intl.d.ts",
+      "size": 7653,
+      "hash": "ixHkKFzSuxZKTcCSSL3saemEJRfbTKR8G6kTAR5E_y8C"
+    },
+    {
+      "name": "lib/lib.es2022.object.d.ts",
+      "size": 1046,
+      "hash": "BQhXGlJHXiRbArxQ-hOUBloKPQUnf79RIMN4S4VlF5kC"
+    },
+    {
+      "name": "lib/lib.es2022.regexp.d.ts",
+      "size": 1304,
+      "hash": "_GEf6o0w6nLGu_tZnJtNOTziLi9b_vIXJTR4Hn0TgQQC"
+    },
+    {
+      "name": "lib/lib.es2022.string.d.ts",
+      "size": 1116,
+      "hash": "j5r0iPUQwwFa88yMJnqenZbE3Tih_f8OEdxaVEcRQVsC"
+    },
+    {
+      "name": "lib/lib.es2023.array.d.ts",
+      "size": 40197,
+      "hash": "C9cUEp_Kh199TEd6GjkiALC80T-y6AkozTNLY4MOoEcC"
+    },
+    {
+      "name": "lib/lib.es2023.collection.d.ts",
+      "size": 861,
+      "hash": "4skDeubNLFLYDO7ws8X_20iGJ9cVKc9PY3dtrxEWHJoC"
+    },
+    {
+      "name": "lib/lib.es2023.d.ts",
+      "size": 960,
+      "hash": "HpMywj6akHF14P_GpJ4jb5e0iDjMiuyc5-TOwh5US2UC"
+    },
+    {
+      "name": "lib/lib.es2023.full.d.ts",
+      "size": 1035,
+      "hash": "ghvWBJuPlrnSTJ-8SbVC3PeoDXb577Mwte8yw3Ovg9QC"
+    },
+    {
+      "name": "lib/lib.es2023.intl.d.ts",
+      "size": 2854,
+      "hash": "E11c9NNF9Z8anKrfr82FjT2cxoKQ22FsyFeXIkRIzMwC"
+    },
+    {
+      "name": "lib/lib.es2024.arraybuffer.d.ts",
+      "size": 2598,
+      "hash": "vCOMP4HCmEdRkytqqyI81bgw4KxsrXY4nl6dL_wDKH0C"
+    },
+    {
+      "name": "lib/lib.es2024.collection.d.ts",
+      "size": 1185,
+      "hash": "Sgf5t202H1cmIJJ-VzW3fW0hAcI83ZQ4PrW3BuezY1cC"
+    },
+    {
+      "name": "lib/lib.es2024.d.ts",
+      "size": 1127,
+      "hash": "N1P7wRE9xREhSAKiNCKAqLKEq5CU9kIOeqFx6Ghnn5EC"
+    },
+    {
+      "name": "lib/lib.es2024.full.d.ts",
+      "size": 1035,
+      "hash": "ufZYed55p2R60uW4CJJ3whWRH6mdS4WNeAFN9rooUvMC"
+    },
+    {
+      "name": "lib/lib.es2024.object.d.ts",
+      "size": 1220,
+      "hash": "fE6NxquDTMa6oCJ-AwYG0p4-hEmp9nzfVgXqVJPE2ykC"
+    },
+    {
+      "name": "lib/lib.es2024.promise.d.ts",
+      "size": 1350,
+      "hash": "3nug_QLgbNmlvUq0Qe0OEic1eG5n3eHoScztHNi0a3gC"
+    },
+    {
+      "name": "lib/lib.es2024.regexp.d.ts",
+      "size": 1034,
+      "hash": "YUjk6I1yCgaFUHHD2wIGlDQUKoMyz5wYLNpVGt7fMVYC"
+    },
+    {
+      "name": "lib/lib.es2024.sharedmemory.d.ts",
+      "size": 3038,
+      "hash": "1j26YlsQgxakDJWkQl-NQpTg3uzP1sflnYGe-hniNAkC"
+    },
+    {
+      "name": "lib/lib.es2024.string.d.ts",
+      "size": 1155,
+      "hash": "BWjWvv7gPdQ1vtT8JcTkaGWyS9y4xWP9wh9YCiwwGQQC"
+    },
+    {
+      "name": "lib/lib.es2025.collection.d.ts",
+      "size": 3839,
+      "hash": "MNYiabBbWEdB8ZpTaYUtXTSJWqKsT9lIlW-IbRX5zA0C"
+    },
+    {
+      "name": "lib/lib.es2025.d.ts",
+      "size": 1079,
+      "hash": "mZyjKINJWoZqpXN_4bq8dkpGnkzebuaxNqS5rmiFPksC"
+    },
+    {
+      "name": "lib/lib.es2025.float16.d.ts",
+      "size": 20489,
+      "hash": "8Sja58RNjzXuQuCkNwAKV8nwbMBPi0-0Luv0SVTVPcgC"
+    },
+    {
+      "name": "lib/lib.es2025.full.d.ts",
+      "size": 1035,
+      "hash": "4D2lGLAbRqTJmh-IzXJ-6Y3fFEksQ9rhrnpj6ZKXG6sC"
+    },
+    {
+      "name": "lib/lib.es2025.intl.d.ts",
+      "size": 9390,
+      "hash": "_75teylTBrK6iAMPZbdMEH2Nmb3PWW6pnGKgL2BhCLAC"
+    },
+    {
+      "name": "lib/lib.es2025.iterator.d.ts",
+      "size": 8637,
+      "hash": "mW-yexUnc2nGikukbtE4tOnoOaAvtOx1b3mXYpJC_Z8C"
+    },
+    {
+      "name": "lib/lib.es2025.promise.d.ts",
+      "size": 1619,
+      "hash": "ebcSWRsnDUd4yJcGyiz8Vt24w_iVhA5Hc4jxcQ3F7akC"
+    },
+    {
+      "name": "lib/lib.es2025.regexp.d.ts",
+      "size": 1255,
+      "hash": "IIhIRs70KLmSub0DLnCk74jjSSY_Y67d8E3ag3p9uiYC"
+    },
+    {
+      "name": "lib/lib.es5.d.ts",
+      "size": 218972,
+      "hash": "vNJCcaETlxup63H_jLAbxrD4cqhcI_2-XZMGWzdZM80C"
+    },
+    {
+      "name": "lib/lib.es6.d.ts",
+      "size": 993,
+      "hash": "F0oPoBu2C8uA4JsLe9zd32iIkUM9YDAkTfW0Trnr0hAC"
+    },
+    {
+      "name": "lib/lib.esnext.array.d.ts",
+      "size": 1752,
+      "hash": "X8q3icc6l81Dgo7jzJSmEmTPJNTERHLOZM7Q4PFIvbIC"
+    },
+    {
+      "name": "lib/lib.esnext.collection.d.ts",
+      "size": 2598,
+      "hash": "21moHwcMGICtZFssAnUCK6pqDE8KzcWNKdNJxu_PCQMC"
+    },
+    {
+      "name": "lib/lib.esnext.d.ts",
+      "size": 1244,
+      "hash": "F_E-y5jLw5JD8u7h8W1FzY7EcGsD7jFPGRXxqLQvaYQC"
+    },
+    {
+      "name": "lib/lib.esnext.date.d.ts",
+      "size": 917,
+      "hash": "ZzKUKSZA9XIrcA59gU4XqvfZP4OkiiybOPM8vJQK2LAC"
+    },
+    {
+      "name": "lib/lib.esnext.decorators.d.ts",
+      "size": 1031,
+      "hash": "14a0j5NMvKSDs8bQp5jLQ7u0raKD52-yLCjlOuBbnmkC"
+    },
+    {
+      "name": "lib/lib.esnext.disposable.d.ts",
+      "size": 6767,
+      "hash": "HsuONHy2sqiSfAm4YmNmMolBjfN19eaOEaCuaDd2l48C"
+    },
+    {
+      "name": "lib/lib.esnext.error.d.ts",
+      "size": 990,
+      "hash": "FC79TOIQV293fcNN8SF3e-ie2kdpQtbWZjsD3LU74_8C"
+    },
+    {
+      "name": "lib/lib.esnext.full.d.ts",
+      "size": 1035,
+      "hash": "70qJfNKj-RAAwQJk5ACzZnx-UeG3Nl8Dti6AgdxTveYC"
+    },
+    {
+      "name": "lib/lib.esnext.intl.d.ts",
+      "size": 5305,
+      "hash": "N5vEFYDC13T4LoKMcDCPJKAFtJDCW6NNZ52EvPBcPZ0C"
+    },
+    {
+      "name": "lib/lib.esnext.sharedmemory.d.ts",
+      "size": 1028,
+      "hash": "7UhPsqqKGiPQJ3BW7DM24KC1L5uNapYfM4pkL69DI10C"
+    },
+    {
+      "name": "lib/lib.esnext.temporal.d.ts",
+      "size": 22011,
+      "hash": "T_7a4dHC1T_byhyW08fdpUQoH30mL5m2iAY0-P2NmCAC"
+    },
+    {
+      "name": "lib/lib.esnext.typedarrays.d.ts",
+      "size": 3350,
+      "hash": "g6cwsSXUd90mTfi6R5r6sno9rnFSsAXCFKuU3H7kT9MC"
+    },
+    {
+      "name": "lib/lib.scripthost.d.ts",
+      "size": 9412,
+      "hash": "8T9LRlyZBB6RLbXEQSmpRYjhqv7jWlDqtRBEgz9QtO4C"
+    },
+    {
+      "name": "lib/lib.webworker.asynciterable.d.ts",
+      "size": 933,
+      "hash": "f1f8RAT_AgvEW5xiCv8rQPcAuV_jEWQCTEU6XjwWPFQC"
+    },
+    {
+      "name": "lib/lib.webworker.d.ts",
+      "size": 787076,
+      "hash": "1S7Wjn61iBdopVcTybXHxEPmtG3hXATjSJKLjv0gsRAC"
+    },
+    {
+      "name": "lib/lib.webworker.importscripts.d.ts",
+      "size": 1002,
+      "hash": "Ki3luUWbP8RN7NnOYQC3LxsALvUjEmwdPYsqSmPXTXgC"
+    },
+    {
+      "name": "lib/lib.webworker.iterable.d.ts",
+      "size": 933,
+      "hash": "f1f8RAT_AgvEW5xiCv8rQPcAuV_jEWQCTEU6XjwWPFQC"
+    },
+    {
+      "name": "lib/tsc",
+      "size": 25850018,
+      "executable": true,
+      "hash": "1mmLSSvYvIZnhvxmHDMgRnzfT7EjakDhipVy0ybzFnQC"
+    },
+    {
+      "name": "lib/tsc.sig",
+      "size": 481,
+      "hash": "mci5xYP2n8-ZvnbOrYsTcloHCb62FRL8dJanuEkiBxUC"
+    },
+    {
+      "name": "package.json",
+      "size": 1035,
+      "hash": "GfjS23Hu4x1UOzrXcwz8zzz1jGvTM6X9I21rjrM2Zv4C"
+    }
+  ]
+}
