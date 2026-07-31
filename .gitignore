@@ -3,3 +3,4 @@ depot_tools/
 .tools/
 *.log
 .DS_Store
+searxng-agentsearch/
