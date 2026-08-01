@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AgentSearch results</title>
+    <link rel="stylesheet" href="agentsearch_results.css">
+  </head>
+  <body>
+    <header>
+      <a id="wordmark" href="chrome://new-tab-page/">
+        <span>Agent</span><strong>Search</strong>
+      </a>
+      <form id="resultsSearch">
+        <input id="query" name="q" type="search" aria-label="Search"
+               autocomplete="off">
+        <button class="searchAction clearAction" type="reset"
+                aria-label="Clear search">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18"/>
+          </svg>
+        </button>
+        <span class="searchDivider" aria-hidden="true"></span>
+        <button class="searchAction microphoneAction" type="button"
+                aria-label="Search by voice">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm-6-3a6 6 0 0 0 12 0M12 18v3m-3 0h6"/>
+          </svg>
+        </button>
+        <button class="searchAction submitAction" type="submit"
+                aria-label="Search">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/>
+          </svg>
+        </button>
+      </form>
+    </header>
+
+    <nav id="categories" aria-label="Search categories">
+      <a data-category="general">All</a>
+      <a data-category="news">News</a>
+      <a data-category="images">Images</a>
+      <a data-category="videos">Videos</a>
+      <a data-category="map">Maps</a>
+    </nav>
+
+    <main>
+      <section id="resultColumn">
+        <p id="resultMeta" aria-live="polite">Searching…</p>
+        <div id="results" aria-live="polite"></div>
+      </section>
+
+      <aside id="agentPanel">
+        <div class="agentHeader">
+          <span class="agentBadge">✦</span>
+          <span><strong>Agent Search</strong><small>Ready to help</small></span>
+        </div>
+        <div class="agentEmpty">
+          <span class="emptyBadge">✦</span>
+          <strong>Ask about these results</strong>
+          <p>Have Agent Search open and compare the top links.</p>
+          <button type="button">Compare the top results</button>
+          <button type="button">Summarize what I found</button>
+        </div>
+        <div class="agentInput">
+          <input placeholder="Ask about these results…" aria-label="Ask Agent Search">
+          <button type="button" aria-label="Send">
+            <svg viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
+          </button>
+        </div>
+        <p class="trust">✓&nbsp; Purchases always ask first</p>
+      </aside>
+    </main>
+
+    <script type="module" src="agentsearch_results.js"></script>
+  </body>
+</html>

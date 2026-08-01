@@ -1,0 +1,531 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --dusk: linear-gradient(145deg, #07152f 0%, #34205f 42%, #bd5f69 73%, #d99b51 100%);
+  --ocean: linear-gradient(145deg, #061928 0%, #0c4a62 48%, #17858b 100%);
+  --ember: linear-gradient(145deg, #1d1027 0%, #702f48 52%, #d46b48 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: #07152f;
+  color: #fff;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+#dashboard {
+  background-image: var(--dusk);
+  background-position: center;
+  background-size: cover;
+  height: 100%;
+  min-height: 520px;
+  position: relative;
+  width: 100%;
+}
+
+#dashboard::before {
+  background: linear-gradient(180deg, rgba(0, 0, 0, .2), transparent 35%, rgba(0, 0, 0, .2));
+  content: '';
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+#accountButton {
+  align-items: center;
+  background: rgba(12, 15, 24, .46);
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  font-weight: 500;
+  height: 36px;
+  justify-content: center;
+  padding: 0 14px;
+  position: absolute;
+  right: 22px;
+  top: 20px;
+  z-index: 3;
+}
+
+#accountButton:hover {
+  background: rgba(25, 29, 40, .68);
+}
+
+#accountButton.signedIn {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  width: 36px;
+}
+
+#accountMenu {
+  background: rgba(24, 24, 27, .96);
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .35);
+  box-sizing: border-box;
+  min-width: 220px;
+  padding: 8px;
+  position: absolute;
+  right: 22px;
+  top: 64px;
+  z-index: 4;
+}
+
+#accountMenu[hidden] {
+  display: none;
+}
+
+#accountEmail {
+  border-bottom: 1px solid rgba(255, 255, 255, .1);
+  color: rgba(255, 255, 255, .68);
+  font-size: 12px;
+  overflow: hidden;
+  padding: 7px 9px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#accountSignOut {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #f0f0f2;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  margin-top: 5px;
+  padding: 9px;
+  text-align: left;
+  width: 100%;
+}
+
+#accountSignOut:hover {
+  background: rgba(255, 255, 255, .08);
+}
+
+#accountAvatar,
+#accountInitial {
+  border-radius: 50%;
+  height: 36px;
+  width: 36px;
+}
+
+#accountAvatar {
+  object-fit: cover;
+}
+
+#accountInitial {
+  align-items: center;
+  background: #3ddc84;
+  color: #06170e;
+  display: flex;
+  font-size: 15px;
+  font-weight: 600;
+  justify-content: center;
+}
+
+#accountAvatar[hidden],
+#accountInitial[hidden] {
+  display: none;
+}
+
+#weather {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  left: 22px;
+  position: absolute;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .5);
+  top: 20px;
+  z-index: 1;
+}
+
+#weatherIcon {
+  color: #f9cf71;
+  font-size: 26px;
+  line-height: 1;
+}
+
+#weather strong,
+#weather span span {
+  display: block;
+}
+
+#temperature {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 19px;
+}
+
+#city {
+  color: rgba(255, 255, 255, .76);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+#centerContent {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  left: 50%;
+  position: absolute;
+  top: 45%;
+  transform: translate(-50%, -50%);
+  width: min(680px, calc(100% - 48px));
+  z-index: 1;
+}
+
+#greeting {
+  color: rgba(255, 255, 255, .84);
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: .01em;
+  margin: 8px 0 0;
+}
+
+#clock {
+  align-items: baseline;
+  display: inline-flex;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 3px 20px rgba(0, 0, 0, .24);
+}
+
+#clockTime {
+  font-size: 68px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+#clockPeriod {
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+  margin-left: 8px;
+}
+
+#searchForm {
+  align-items: center;
+  background: #fff;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  display: flex;
+  height: 56px;
+  margin-top: 30px;
+  padding: 0 20px;
+  width: 100%;
+}
+
+#searchForm .searchIcon {
+  color: #5f6368;
+  fill: none;
+  flex: 0 0 21px;
+  height: 21px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+  width: 21px;
+}
+
+#searchInput {
+  background: transparent;
+  border: 0;
+  color: #202124;
+  flex: 1;
+  font-size: 17px;
+  height: 100%;
+  min-width: 0;
+  outline: none;
+  padding: 0 14px;
+}
+
+#searchInput::placeholder {
+  color: #5f6368;
+  opacity: 1;
+}
+
+.searchMicrophone {
+  align-items: center;
+  color: #5f6368;
+  display: flex;
+  flex: 0 0 24px;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.searchMicrophone svg {
+  fill: none;
+  height: 22px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 22px;
+}
+
+#shortcuts {
+  display: flex;
+  gap: 22px;
+  justify-content: center;
+  margin-top: 25px;
+}
+
+.shortcut {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: rgba(255, 255, 255, .84);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 7px;
+  min-width: 62px;
+  padding: 0;
+  text-decoration: none;
+}
+
+.shortcutIcon {
+  align-items: center;
+  background: #1a1a1e;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
+  display: flex;
+  font-size: 21px;
+  font-weight: 600;
+  height: 52px;
+  justify-content: center;
+  position: relative;
+  transition: transform 140ms ease, background 140ms ease,
+      box-shadow 140ms ease;
+  width: 52px;
+}
+
+.shortcutFallback {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  width: 100%;
+}
+
+.shortcutIcon.hasFavicon .shortcutFallback {
+  display: none;
+}
+
+.shortcutFavicon {
+  height: 28px;
+  object-fit: contain;
+  width: 28px;
+}
+
+.shortcut:hover .shortcutIcon {
+  background: #222228;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, .36);
+  transform: translateY(-2px);
+}
+
+.gmail {
+  color: #ef6868;
+}
+
+.amazon {
+  color: #f5b74c;
+  font-family: Georgia, serif;
+}
+
+.add {
+  background: rgba(26, 26, 30, .66);
+  border: 1px dashed rgba(255, 255, 255, .4);
+  box-shadow: none;
+  color: rgba(255, 255, 255, .8);
+  font-size: 27px;
+  font-weight: 300;
+}
+
+.shortcut:hover .add {
+  background: rgba(26, 26, 30, .76);
+  box-shadow: none;
+}
+
+#menuIcon {
+  align-items: center;
+  background: rgba(12, 15, 24, .38);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 12px;
+  display: none;
+  height: 38px;
+  justify-content: center;
+  position: absolute;
+  right: 22px;
+  top: 20px;
+  width: 38px;
+  z-index: 1;
+}
+
+#menuIcon svg {
+  fill: none;
+  height: 20px;
+  stroke: rgba(255, 255, 255, .86);
+  stroke-linecap: round;
+  stroke-width: 1.8;
+  width: 20px;
+}
+
+#backgroundControls {
+  bottom: 24px;
+  left: 24px;
+  position: absolute;
+  z-index: 2;
+}
+
+#backgroundButton {
+  align-items: center;
+  background: rgba(10, 13, 22, .52);
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 10px 13px;
+}
+
+#backgroundButton svg {
+  fill: none;
+  height: 16px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+  width: 16px;
+}
+
+#backgroundMenu {
+  background: #11131b;
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: 14px;
+  bottom: 48px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
+  padding: 15px;
+  position: absolute;
+  width: 230px;
+}
+
+#backgroundMenu p {
+  color: rgba(255, 255, 255, .62);
+  font-size: 11px;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+#gradientChoices {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.gradient {
+  border: 2px solid transparent;
+  border-radius: 9px;
+  cursor: pointer;
+  height: 52px;
+  width: 58px;
+}
+
+.gradient:hover,
+.gradient.selected {
+  border-color: #4ad4c4;
+}
+
+.dusk {
+  background: var(--dusk);
+}
+
+.ocean {
+  background: var(--ocean);
+}
+
+.ember {
+  background: var(--ember);
+}
+
+#uploadButton,
+#resetBackground {
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, .82);
+  cursor: pointer;
+  display: block;
+  font-size: 13px;
+  padding: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+#uploadButton:hover,
+#resetBackground:hover {
+  background: rgba(255, 255, 255, .07);
+}
+
+#quote {
+  bottom: 25px;
+  color: rgba(255, 255, 255, .72);
+  font-size: 13px;
+  font-style: italic;
+  letter-spacing: .02em;
+  margin: 0;
+  position: absolute;
+  right: 28px;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, .5);
+  z-index: 1;
+}
+
+@media (max-height: 650px) {
+  #centerContent {
+    top: 43%;
+  }
+
+  #clock {
+    transform: scale(.9);
+  }
+
+  #searchForm {
+    margin-top: 22px;
+  }
+}
+
+@media (max-width: 620px) {
+  #quote {
+    display: none;
+  }
+}

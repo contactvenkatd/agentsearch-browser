@@ -1,0 +1,10 @@
+COMPANY_FULLNAME=The Chromium Authors
+COMPANY_SHORTNAME=The Chromium Authors
+PRODUCT_FULLNAME=AgentSearch
+PRODUCT_SHORTNAME=AgentSearch
+PRODUCT_INSTALLER_FULLNAME=AgentSearch Installer
+PRODUCT_INSTALLER_SHORTNAME=AgentSearch Installer
+COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Chromium Authors. All rights reserved.
+MAC_BUNDLE_ID=com.agentsearch.AgentSearch
+MAC_CREATOR_CODE=Cr24
+MAC_TEAM_ID=

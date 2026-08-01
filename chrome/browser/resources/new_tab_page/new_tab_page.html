@@ -1,0 +1,103 @@
+<!doctype html>
+<html dir="$i18n{textdirection}" lang="$i18n{language}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AgentSearch</title>
+    <link rel="stylesheet" href="agentsearch_new_tab.css">
+  </head>
+  <body>
+    <main id="dashboard">
+      <button id="accountButton" type="button" aria-label="Sign in">
+        <span id="accountSignInLabel">Sign in</span>
+        <img id="accountAvatar" alt="" hidden>
+        <span id="accountInitial" hidden></span>
+      </button>
+      <div id="accountMenu" role="menu" hidden>
+        <div id="accountEmail"></div>
+        <button id="accountSignOut" type="button" role="menuitem">
+          Sign out
+        </button>
+      </div>
+
+      <section id="weather" aria-live="polite">
+        <span id="weatherIcon">●</span>
+        <span>
+          <strong id="temperature">--°</strong>
+          <span id="city">Finding your weather…</span>
+        </span>
+      </section>
+
+      <section id="centerContent">
+        <time id="clock">
+          <span id="clockTime">--:--</span>
+          <span id="clockPeriod"></span>
+        </time>
+        <p id="greeting">Good evening</p>
+
+        <form id="searchForm"
+              action="chrome://new-tab-page/agentsearch_results.html"
+              method="get">
+          <svg class="searchIcon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/>
+          </svg>
+          <input id="searchInput" name="q" type="search"
+                 placeholder="Search the web with AgentSearch"
+                 aria-label="Search the web" autocomplete="off" autofocus>
+          <span class="searchMicrophone" aria-hidden="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm-6-3a6 6 0 0 0 12 0M12 18v3m-3 0h6"/>
+            </svg>
+          </span>
+        </form>
+
+        <nav id="shortcuts" aria-label="Shortcuts">
+          <a class="shortcut" href="https://mail.google.com/">
+            <span class="shortcutIcon gmail">
+              <span class="shortcutFallback">M</span>
+            </span>
+            <span>Gmail</span>
+          </a>
+          <a class="shortcut" href="https://www.amazon.com/">
+            <span class="shortcutIcon amazon">
+              <span class="shortcutFallback">a</span>
+            </span>
+            <span>Amazon</span>
+          </a>
+          <button class="shortcut" id="addShortcut" type="button">
+            <span class="shortcutIcon add">+</span><span>Add</span>
+          </button>
+        </nav>
+      </section>
+
+      <span id="menuIcon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M5 7h14M5 12h14M5 17h14"/>
+        </svg>
+      </span>
+
+      <section id="backgroundControls">
+        <button id="backgroundButton" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 16.5V19h2.5L18 7.5 15.5 5 4 16.5Zm13-13 2.5 2.5"/>
+          </svg>
+          Change background
+        </button>
+        <div id="backgroundMenu" hidden>
+          <p>Preset gradients</p>
+          <div id="gradientChoices">
+            <button data-gradient="dusk" class="gradient dusk" aria-label="Dusk gradient"></button>
+            <button data-gradient="ocean" class="gradient ocean" aria-label="Ocean gradient"></button>
+            <button data-gradient="ember" class="gradient ember" aria-label="Ember gradient"></button>
+          </div>
+          <button id="uploadButton" type="button">Upload an image</button>
+          <button id="resetBackground" type="button">Reset background</button>
+          <input id="backgroundUpload" type="file" accept="image/*" hidden>
+        </div>
+      </section>
+
+      <p id="quote">The browser that works while you don't.</p>
+    </main>
+    <script type="module" src="agentsearch_new_tab.js"></script>
+  </body>
+</html>
