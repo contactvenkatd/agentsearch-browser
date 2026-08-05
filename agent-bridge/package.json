@@ -1,0 +1,13 @@
+{
+  "name": "agentsearch-agent-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "openai": "^7.1.0",
+    "playwright": "^1.54.0"
+  }
+}
