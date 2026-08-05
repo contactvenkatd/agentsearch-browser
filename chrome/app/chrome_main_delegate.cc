@@ -1067,6 +1067,19 @@ void ChromeMainDelegate::SetupTracing() {
 }
 
 std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+  // AgentSearch's loopback companion controls the active tab through CDP. The
+  // Chrome DevTools server binds its TCP socket to 127.0.0.1/::1. Preserve any
+  // explicit port or pipe selected by the user.
+  base::CommandLine* mutable_command_line =
+      base::CommandLine::ForCurrentProcess();
+  if (!mutable_command_line->HasSwitch(switches::kProcessType) &&
+      !mutable_command_line->HasSwitch(::switches::kRemoteDebuggingPort) &&
+      !mutable_command_line->HasSwitch(::switches::kRemoteDebuggingPipe)) {
+    mutable_command_line->AppendSwitchASCII(::switches::kRemoteDebuggingPort,
+                                            "9222");
+  }
+#endif
 #if BUILDFLAG(IS_CHROMEOS)
   ash::BootTimesRecorder::Get()->SaveChromeMainStats();
 #endif
