@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "node src/server.js",
+    "lint": "node --check src/server.js && node --check src/task-manager.js && node --check src/agent-core.js && node --check src/chromium.js && node --check src/label-elements.js",
     "test": "node --test"
   },
   "dependencies": {

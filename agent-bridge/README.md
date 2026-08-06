@@ -14,3 +14,17 @@ npm start
 Defaults: bridge `127.0.0.1:9333`, CDP `127.0.0.1:9222`. Override with
 `AGENT_BRIDGE_PORT` and `AGENTSEARCH_CDP_URL`. Set `AGENT_BRIDGE_MOCK=1` to
 exercise messaging and the purchase gate without contacting xAI.
+
+The loopback HTTP API is:
+
+- `GET /health`
+- `POST /v1/tasks`
+- `GET /v1/tasks/:runId/events?after=:sequence`
+- `POST /v1/tasks/:runId/confirmation`
+- `POST /v1/tasks/:runId/cancel`
+
+Mock mode does not require CDP or an API key. Deterministic failure scenarios
+are selected by including one of these markers in the task:
+`[mock:slow]`, `[mock:confirmation]`, `[mock:navigation-failure]`,
+`[mock:timeout]`, `[mock:max-steps]`, `[mock:expired-confirmation]`, or
+`[mock:invalid-response]`.

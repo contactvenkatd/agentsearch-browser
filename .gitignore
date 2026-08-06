@@ -1,4 +1,5 @@
 src/
+!agent-bridge/src/
 depot_tools/
 .tools/
 *.log

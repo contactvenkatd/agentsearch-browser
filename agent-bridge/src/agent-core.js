@@ -1,0 +1,126 @@
+'use strict';
+
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const OpenAI = require('openai');
+
+const TOOL = [{type: 'function', function: {
+  name: 'browser_action',
+  description: 'Perform exactly one browser action and observe the result.',
+  parameters: {type: 'object', properties: {
+    action: {type: 'string', enum: ['click', 'type', 'navigate', 'scroll',
+      'accept_autofill', 'request_purchase_confirmation', 'wait', 'done']},
+    element_id: {type: 'integer'}, text: {type: 'string'}, url: {type: 'string'},
+    summary: {type: 'string', description: 'Item, price, quantity, and total.'},
+    reasoning: {type: 'string'}
+  }, required: ['action', 'reasoning']}
+}}];
+
+function apiKey() {
+  if (process.env.XAI_API_KEY) return process.env.XAI_API_KEY.trim();
+  const filename = process.env.AGENTSEARCH_XAI_KEY_FILE ||
+    path.join(os.homedir(), 'agentsearch-xai-key.txt');
+  try { return fs.readFileSync(filename, 'utf8').trim(); } catch { return ''; }
+}
+
+function formatElements(elements) {
+  if (!elements.length) return '(no interactive elements detected)';
+  return elements.map(e => `[${e.id}] ${e.tag}${e.type ? `[type=${e.type}]` : ''}` +
+    `${e.role ? ` role=${e.role}` : ''} "${e.text}"`).join('\n');
+}
+
+function safePageUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return '(unavailable)';
+  }
+}
+
+async function decide(run, observation) {
+  if (process.env.AGENT_BRIDGE_MOCK === '1') {
+    if (/\[mock:navigation-failure\]/i.test(run.task))
+      return {action: 'navigate', url: 'https://navigation-failure.example/',
+        reasoning: 'Testing navigation failure', toolCallId: 'mock-navigation'};
+    if (/\[mock:slow\]/i.test(run.task) && !run.mockSlowStep)
+      return {action: 'wait', reasoning: 'Testing a cancellable slow action',
+        toolCallId: 'mock-slow'};
+    if (/\[mock:max-steps\]/i.test(run.task))
+      return {action: 'scroll', reasoning: 'Testing the maximum step limit',
+        toolCallId: `mock-step-${run.sequence}`};
+    if (/\[mock:timeout\]/i.test(run.task))
+      return {action: 'wait', reasoning: 'Testing task timeout',
+        toolCallId: 'mock-timeout'};
+    if (/wireless headphones/i.test(run.task)) {
+      const actions = [
+        {action: 'navigate', url: 'https://www.google.com/',
+          reasoning: 'Opening Google'},
+        {action: 'type', element_id: 0, text: 'wireless headphones',
+          reasoning: 'Entering the requested search'},
+        {action: 'scroll', reasoning: 'Reviewing the visible results'},
+        {action: 'wait', reasoning: 'Waiting for visible results'},
+        {action: 'done', reasoning: 'Mock search task completed'}
+      ];
+      const index = run.mockActionIndex || 0;
+      run.mockActionIndex = index + 1;
+      return {...actions[Math.min(index, actions.length - 1)],
+        toolCallId: `mock-action-${index}`};
+    }
+    if (/\[mock:(?:confirmation|expired-confirmation)\]|\b(?:buy|checkout)\b/i.test(run.task) &&
+        !run.mockConfirmationRequested)
+      return {action: 'request_purchase_confirmation', reasoning: 'Mock purchase gate',
+        summary: 'Mock item; quantity 1; total $1.00', toolCallId: 'mock-purchase'};
+    return {action: 'done', reasoning: 'Mock task completed', toolCallId: 'mock-done'};
+  }
+  const key = apiKey();
+  if (!key) throw new Error('xAI API key not found in XAI_API_KEY or ~/agentsearch-xai-key.txt');
+  const prompt = `Task: ${run.task}\n\nCurrent URL: ${safePageUrl(observation.url)}\n` +
+    `Page title: ${observation.title}\n\nInteractive elements on screen:\n` +
+    `${formatElements(observation.elements)}\n\nDecide the single next action. ` +
+    'Call request_purchase_confirmation before a final purchase action.';
+  const messages = [...run.messages, {role: 'user', content: prompt}];
+  const client = new OpenAI({apiKey: key, baseURL: 'https://api.x.ai/v1'});
+  const response = await client.chat.completions.create({model: 'grok-4.3',
+    max_tokens: 1024, tools: TOOL,
+    tool_choice: {type: 'function', function: {name: 'browser_action'}}, messages});
+  const call = response.choices[0]?.message?.tool_calls?.[0];
+  if (!call) throw new Error('Grok returned no browser_action tool call');
+  run.messages = messages.concat(response.choices[0].message);
+  return {...JSON.parse(call.function.arguments), toolCallId: call.id};
+}
+
+async function execute(page, action, run) {
+  if (process.env.AGENT_BRIDGE_MOCK === '1') {
+    if (action.action === 'navigate' &&
+        /\[mock:navigation-failure\]/i.test(run.task)) {
+      throw new Error('Mock navigation failed.');
+    }
+    if (action.action === 'wait') {
+      const delay = /\[mock:timeout\]/i.test(run.task) ? 100 : 30;
+      await page.waitForTimeout(delay);
+      run.mockSlowStep = true;
+    }
+    run.mockExecutedActions ||= [];
+    run.mockExecutedActions.push(action.action);
+    return;
+  }
+  switch (action.action) {
+    case 'navigate': await page.goto(action.url); break;
+    case 'click': await page.locator(`[data-agent-id="${action.element_id}"]`).click(); break;
+    case 'type': await page.locator(`[data-agent-id="${action.element_id}"]`).fill(action.text || ''); break;
+    case 'accept_autofill':
+      await page.locator(`[data-agent-id="${action.element_id}"]`).click();
+      await page.waitForTimeout(400); await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter'); break;
+    case 'scroll': await page.evaluate(() => scrollBy(0, 800)); break;
+    case 'wait': await page.waitForTimeout(1500); break;
+  }
+}
+
+module.exports = {decide, execute};
