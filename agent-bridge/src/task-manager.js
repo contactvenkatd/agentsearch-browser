@@ -18,6 +18,10 @@ function isPrivateHostname(hostname) {
 }
 
 function validateAction(action, observation) {
+  if (action.action === 'respond' &&
+      (typeof action.text !== 'string' || !action.text.trim())) {
+    throw new Error('Grok returned an empty text response.');
+  }
   if (action.action === 'navigate') {
     let url;
     try {
@@ -31,7 +35,7 @@ function validateAction(action, observation) {
         'Navigation to local, private, credentialed, or non-HTTP URLs is blocked.');
     }
   }
-  if (['click', 'type', 'accept_autofill'].includes(action.action) &&
+  if (['click', 'type', 'press_enter', 'accept_autofill'].includes(action.action) &&
       !observation.elements.some(element => element.id === action.element_id)) {
     throw new Error('The requested element is not in the current page observation.');
   }
@@ -53,7 +57,8 @@ class TaskManager {
     const run = {id: crypto.randomUUID(), task, targetId, status: 'running',
       events: [], sequence: 0, messages: [], paymentFieldTouched: false,
       purchaseAuthorization: null, pendingConfirmation: null, cancelled: false,
-      startedAt: now, deadline: now + taskTimeout, loopActive: false};
+      startedAt: now, deadline: now + taskTimeout, loopActive: false,
+      pendingSearchSubmission: false};
     this.runs.set(run.id, run);
     this.emit(run, 'bridge_received', 'Bridge accepted the task.', false);
     void this.loop(run);
@@ -63,6 +68,7 @@ class TaskManager {
   emit(run, type, text, persist = false, data = {}) {
     if (run.cancelled && type !== 'cancelled') return;
     run.events.push({sequence: ++run.sequence, type, text, persist, ...data});
+    console.debug(`[AgentSearch ${run.id}] ${type}: ${text}`);
   }
 
   invalidateConfirmation(run) {
@@ -117,7 +123,22 @@ class TaskManager {
             {confirmationId, summary: action.summary || 'Confirm this action?'});
           return;
         }
+        if (action.action === 'respond') {
+          this.emit(run, 'assistant_message', action.text.trim(), true);
+          run.status = 'done';
+          this.invalidateConfirmation(run);
+          this.emit(run, 'done', action.reasoning || 'Response complete.');
+          return;
+        }
         if (action.action === 'done') {
+          if (run.pendingSearchSubmission) {
+            run.messages.push({role: 'tool', tool_call_id: action.toolCallId,
+              content: 'Task is not complete: the search text was entered but ' +
+                'has not been submitted. Press Enter on the search field.'});
+            this.emit(run, 'completion_deferred',
+              'Search submission is still required.');
+            continue;
+          }
           run.status = 'done';
           this.invalidateConfirmation(run);
           this.emit(run, 'done', action.reasoning || 'Task complete.', true);
@@ -134,6 +155,15 @@ class TaskManager {
         await execute(observation.page, action, run);
         if (!this.ensureRunning(run)) return;
         if (action.action === 'accept_autofill') run.paymentFieldTouched = true;
+        if (action.action === 'type') {
+          const element = observation.elements.find(candidate =>
+            candidate.id === action.element_id);
+          if (element?.type === 'search' || /\bsearch\b/i.test(run.task)) {
+            run.pendingSearchSubmission = true;
+          }
+        } else if (action.action === 'press_enter') {
+          run.pendingSearchSubmission = false;
+        }
         run.messages.push({role: 'tool', tool_call_id: action.toolCallId,
           content: 'Action result: ok'});
         this.emit(run, 'action_completed', `Completed ${action.action}.`, true,

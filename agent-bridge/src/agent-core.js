@@ -9,9 +9,11 @@ const TOOL = [{type: 'function', function: {
   name: 'browser_action',
   description: 'Perform exactly one browser action and observe the result.',
   parameters: {type: 'object', properties: {
-    action: {type: 'string', enum: ['click', 'type', 'navigate', 'scroll',
-      'accept_autofill', 'request_purchase_confirmation', 'wait', 'done']},
-    element_id: {type: 'integer'}, text: {type: 'string'}, url: {type: 'string'},
+    action: {type: 'string', enum: ['click', 'type', 'press_enter', 'navigate', 'scroll',
+      'accept_autofill', 'request_purchase_confirmation', 'respond', 'wait', 'done']},
+    element_id: {type: 'integer'},
+    text: {type: 'string', description: 'Text to type, or the answer for respond.'},
+    url: {type: 'string'},
     summary: {type: 'string', description: 'Item, price, quantity, and total.'},
     reasoning: {type: 'string'}
   }, required: ['action', 'reasoning']}
@@ -43,6 +45,19 @@ function safePageUrl(rawUrl) {
   }
 }
 
+function buildPrompt(run, observation) {
+  return `Task: ${run.task}\n\nCurrent URL: ${safePageUrl(observation.url)}\n` +
+    `Page title: ${observation.title}\n\nReadable page content:\n` +
+    `${observation.pageText || '(no readable page content detected)'}\n\n` +
+    `Interactive elements on screen:\n${formatElements(observation.elements)}\n\n` +
+    'Decide the single next action. For questions, summaries, and other ' +
+    'requests that need a textual answer, call respond with the complete ' +
+    'answer in text. Typing only changes a field and never submits it. For a ' +
+    'search task, use press_enter on the search field after type, then ' +
+    'observe the resulting page before calling done. Call ' +
+    'request_purchase_confirmation before a final purchase action.';
+}
+
 async function decide(run, observation) {
   if (process.env.AGENT_BRIDGE_MOCK === '1') {
     if (/\[mock:navigation-failure\]/i.test(run.task))
@@ -57,13 +72,23 @@ async function decide(run, observation) {
     if (/\[mock:timeout\]/i.test(run.task))
       return {action: 'wait', reasoning: 'Testing task timeout',
         toolCallId: 'mock-timeout'};
-    if (/wireless headphones/i.test(run.task)) {
+    if (/\[mock:empty-response\]/i.test(run.task))
+      return {action: 'respond', text: '   ', reasoning: 'Testing empty answer',
+        toolCallId: 'mock-empty-response'};
+    if (/\bsummar(?:ize|ise|y)\b/i.test(run.task))
+      return {action: 'respond', text: 'Mock readable page summary.',
+        reasoning: 'Summarizing the readable page content',
+        toolCallId: 'mock-response'};
+    const mockSearch = run.task.match(/\bsearch(?: the web)? for ([^.[\]]+)/i);
+    if (mockSearch) {
+      const query = mockSearch[1].trim();
       const actions = [
         {action: 'navigate', url: 'https://www.google.com/',
           reasoning: 'Opening Google'},
-        {action: 'type', element_id: 0, text: 'wireless headphones',
+        {action: 'type', element_id: 0, text: query,
           reasoning: 'Entering the requested search'},
-        {action: 'scroll', reasoning: 'Reviewing the visible results'},
+        {action: 'press_enter', element_id: 0,
+          reasoning: 'Submitting the requested search'},
         {action: 'wait', reasoning: 'Waiting for visible results'},
         {action: 'done', reasoning: 'Mock search task completed'}
       ];
@@ -80,10 +105,7 @@ async function decide(run, observation) {
   }
   const key = apiKey();
   if (!key) throw new Error('xAI API key not found in XAI_API_KEY or ~/agentsearch-xai-key.txt');
-  const prompt = `Task: ${run.task}\n\nCurrent URL: ${safePageUrl(observation.url)}\n` +
-    `Page title: ${observation.title}\n\nInteractive elements on screen:\n` +
-    `${formatElements(observation.elements)}\n\nDecide the single next action. ` +
-    'Call request_purchase_confirmation before a final purchase action.';
+  const prompt = buildPrompt(run, observation);
   const messages = [...run.messages, {role: 'user', content: prompt}];
   const client = new OpenAI({apiKey: key, baseURL: 'https://api.x.ai/v1'});
   const response = await client.chat.completions.create({model: 'grok-4.3',
@@ -114,6 +136,9 @@ async function execute(page, action, run) {
     case 'navigate': await page.goto(action.url); break;
     case 'click': await page.locator(`[data-agent-id="${action.element_id}"]`).click(); break;
     case 'type': await page.locator(`[data-agent-id="${action.element_id}"]`).fill(action.text || ''); break;
+    case 'press_enter':
+      await page.locator(`[data-agent-id="${action.element_id}"]`).press('Enter');
+      break;
     case 'accept_autofill':
       await page.locator(`[data-agent-id="${action.element_id}"]`).click();
       await page.waitForTimeout(400); await page.keyboard.press('ArrowDown');
@@ -123,4 +148,4 @@ async function execute(page, action, run) {
   }
 }
 
-module.exports = {decide, execute};
+module.exports = {buildPrompt, decide, execute};

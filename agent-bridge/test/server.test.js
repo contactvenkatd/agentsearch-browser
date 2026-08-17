@@ -53,6 +53,21 @@ test('health and task event endpoints work without xAI or CDP', async () => {
   });
 });
 
+test('summary API queues one assistant answer before done', async () => {
+  await withServer(async baseUrl => {
+    const created = await createTask(baseUrl, 'summarize this page');
+    const payload = await waitForStatus(baseUrl, created.runId, 'done');
+    const answerIndex = payload.events.findIndex(event =>
+      event.type === 'assistant_message');
+    const doneIndex = payload.events.findIndex(event => event.type === 'done');
+    assert.ok(answerIndex >= 0 && answerIndex < doneIndex);
+    assert.equal(payload.events.filter(event =>
+      event.type === 'assistant_message').length, 1);
+    assert.equal(payload.events[answerIndex].text,
+      'Mock readable page summary.');
+  });
+});
+
 test('request validation and final cancellation are enforced', async () => {
   await withServer(async baseUrl => {
     const invalidJson = await fetch(`${baseUrl}/v1/tasks`, {method: 'POST',

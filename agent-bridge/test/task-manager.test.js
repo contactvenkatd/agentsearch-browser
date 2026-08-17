@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {TaskManager, validateAction} = require('../src/task-manager');
+const {buildPrompt, execute} = require('../src/agent-core');
 
 process.env.AGENT_BRIDGE_MOCK = '1';
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -17,7 +18,7 @@ const connection = {observe: async targetId => ({page: {
   waitForTimeout: delay}, url: 'https://example.test/', title: targetId,
 elements: [{id: 0, tag: 'input', type: 'search', text: 'Search'}]})};
 
-test('normal mock task emits ordered events and completes', async () => {
+test('summary response is emitted before completion with no progress messages', async () => {
   const manager = new TaskManager(connection);
   const run = manager.create('summarize this page', 'target');
   await waitFor(() => run.status === 'done');
@@ -25,22 +26,63 @@ test('normal mock task emits ordered events and completes', async () => {
     run.events.map((_, index) => index + 1));
   assert.deepEqual(run.events.map(event => event.type), [
     'bridge_received', 'page_observation_started', 'page_observed',
-    'model_request_started', 'action_decided', 'done'
+    'model_request_started', 'action_decided', 'assistant_message', 'done'
   ]);
+  const userVisibleEvents = run.events.filter(event =>
+    ['assistant_message', 'error', 'cancelled'].includes(event.type));
+  assert.deepEqual(userVisibleEvents.map(event => event.text),
+    ['Mock readable page summary.']);
+  assert.ok(run.events.findIndex(event => event.type === 'assistant_message') <
+    run.events.findIndex(event => event.type === 'done'));
+  assert.equal(run.events.find(event => event.type === 'assistant_message').persist,
+    true);
 });
 
-test('safe do-not-purchase task does not request confirmation', async () => {
+test('readable page content is included in the Grok prompt', () => {
+  const prompt = buildPrompt({task: 'summarize this page'}, {
+    url: 'https://example.test/private?token=secret', title: 'Example',
+    pageText: 'Important article content to summarize.', elements: [],
+  });
+  assert.match(prompt, /Readable page content:\nImportant article content/);
+  assert.match(prompt, /call respond with the complete answer/);
+  assert.doesNotMatch(prompt, /token=secret/);
+});
+
+test('empty response fails instead of silently completing', async () => {
   const manager = new TaskManager(connection);
-  const run = manager.create(
-    'Go to google.com and search for wireless headphones. Do not purchase anything.',
-    'target');
+  const run = manager.create('[mock:empty-response]', 'target');
+  await waitFor(() => run.status === 'error');
+  assert.equal(run.events.some(event => event.type === 'assistant_message'), false);
+  assert.equal(run.events.some(event => event.type === 'done'), false);
+  assert.match(run.events.at(-1).text, /empty text response/i);
+});
+
+test('search task types and then submits with Enter before completion', async () => {
+  const manager = new TaskManager(connection);
+  const run = manager.create('search for trump', 'target');
   await waitFor(() => run.status === 'done');
   assert.equal(run.events.some(event =>
     event.type === 'confirmation_required'), false);
   assert.deepEqual(run.mockExecutedActions,
-    ['navigate', 'type', 'scroll', 'wait']);
+    ['navigate', 'type', 'press_enter', 'wait']);
   assert.equal(run.events.filter(event =>
     event.type === 'action_completed').length, 4);
+});
+
+test('press_enter executes Enter on the observed element', async () => {
+  const previousMock = process.env.AGENT_BRIDGE_MOCK;
+  process.env.AGENT_BRIDGE_MOCK = '0';
+  let pressed;
+  const page = {locator: selector => ({press: async key => {
+    pressed = {selector, key};
+  }})};
+  try {
+    await execute(page, {action: 'press_enter', element_id: 7}, {});
+  } finally {
+    process.env.AGENT_BRIDGE_MOCK = previousMock;
+  }
+  assert.deepEqual(pressed,
+    {selector: '[data-agent-id="7"]', key: 'Enter'});
 });
 
 test('runs have unpredictable distinct ids and isolated events', async () => {

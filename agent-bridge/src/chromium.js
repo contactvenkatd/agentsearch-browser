@@ -3,6 +3,24 @@
 const {chromium} = require('playwright');
 const LABEL_ELEMENTS_SCRIPT = require('./label-elements');
 
+const MAX_PAGE_TEXT_CHARS = 10000;
+
+async function extractReadableText(page) {
+  return page.evaluate(maxLength => {
+    const source = document.querySelector('main') ||
+      document.querySelector('article') ||
+      document.querySelector('[role="main"]') || document.body;
+    if (!source) return '';
+    const clone = source.cloneNode(true);
+    clone.querySelectorAll(
+      'script, style, noscript, template, svg, canvas, ' +
+      '.agent-label-overlay, [data-agentsearch-overlay]')
+      .forEach(element => element.remove());
+    return (clone.textContent || '').replace(/\s+/g, ' ').trim()
+      .slice(0, maxLength);
+  }, MAX_PAGE_TEXT_CHARS);
+}
+
 function safeTargetUrl(rawUrl) {
   try {
     const url = new URL(rawUrl);
@@ -99,8 +117,11 @@ class ChromiumConnection {
 
   async observe(targetId) {
     const page = await this.pageForTarget(targetId);
-    const elements = await page.evaluate(LABEL_ELEMENTS_SCRIPT);
-    return {page, url: page.url(), title: await page.title(), elements};
+    const [elements, title, pageText] = await Promise.all([
+      page.evaluate(LABEL_ELEMENTS_SCRIPT), page.title(),
+      extractReadableText(page),
+    ]);
+    return {page, url: page.url(), title, elements, pageText};
   }
 }
 
@@ -111,9 +132,10 @@ class MockChromiumConnection {
     }
     return {page: {waitForTimeout: delay => new Promise(resolve =>
       setTimeout(resolve, delay))}, url: 'https://example.test/',
-    title: `Mock page ${targetId}`,
+    title: `Mock page ${targetId}`, pageText: 'Mock readable page content.',
     elements: [{id: 0, tag: 'input', type: 'search', text: 'Search'}]};
   }
 }
 
-module.exports = {ChromiumConnection, MockChromiumConnection};
+module.exports = {ChromiumConnection, MockChromiumConnection,
+  MAX_PAGE_TEXT_CHARS, extractReadableText};

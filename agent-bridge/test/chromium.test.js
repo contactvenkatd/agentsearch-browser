@@ -2,7 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {ChromiumConnection} = require('../src/chromium');
+const {ChromiumConnection, MAX_PAGE_TEXT_CHARS,
+  extractReadableText} = require('../src/chromium');
 
 function connectionWithTargets(targets) {
   const page = {url: () => 'https://example.test/page',
@@ -54,3 +55,35 @@ test('does not substitute a Playwright page for a tab target id', async () => {
   assert.match(diagnostics[0], /"receivedTargetType":"tab"/);
   assert.match(diagnostics[0], /target id differs from tab-id/);
 });
+
+test('extracts normalized readable text and excludes non-content elements',
+  async () => {
+    const parts = {content: `  Main heading\n\n${'article '.repeat(2000)}`,
+      script: 'secret script', style: 'hidden style', overlay: 'overlay label'};
+    const clone = {
+      get textContent() { return Object.values(parts).join(' '); },
+      querySelectorAll: selector => {
+        assert.match(selector, /script/);
+        assert.match(selector, /\.agent-label-overlay/);
+        return [
+          {remove: () => { parts.script = ''; }},
+          {remove: () => { parts.style = ''; }},
+          {remove: () => { parts.overlay = ''; }},
+        ];
+      },
+    };
+    const previousDocument = global.document;
+    global.document = {querySelector: selector => selector === 'main' ?
+      {cloneNode: () => clone} : null, body: null};
+    const page = {evaluate: async (callback, argument) =>
+      callback(argument)};
+    try {
+      const text = await extractReadableText(page);
+      assert.equal(text.length, MAX_PAGE_TEXT_CHARS);
+      assert.match(text, /^Main heading article/);
+      assert.doesNotMatch(text, /secret script|hidden style|overlay label/);
+      assert.doesNotMatch(text, /\s{2,}/);
+    } finally {
+      global.document = previousDocument;
+    }
+  });
