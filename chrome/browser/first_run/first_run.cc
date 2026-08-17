@@ -20,6 +20,7 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/first_run/first_run_features.h"
@@ -254,10 +255,12 @@ base::Time ReadFirstRunSentinelCreationTime() {
 }
 
 // Returns true if the sentinel file exists (or the path cannot be obtained).
+#if !BUILDFLAG(AGENTSEARCH_BRANDING)
 bool IsFirstRunSentinelPresent() {
   base::FilePath sentinel;
   return !GetFirstRunSentinelFilePath(&sentinel) || base::PathExists(sentinel);
 }
+#endif
 
 }  // namespace
 
@@ -350,6 +353,12 @@ void RegisterProfilePrefs(
 }
 
 bool IsChromeFirstRun() {
+#if BUILDFLAG(AGENTSEARCH_BRANDING)
+  // AgentSearch opens directly to its dashboard on every new profile. Its
+  // first-run and sign-in promotion flows are permanently disabled at build
+  // time and do not depend on --no-first-run being supplied by the launcher.
+  return false;
+#else
   if (g_first_run == internal::FIRST_RUN_UNKNOWN) {
     const base::CommandLine* command_line =
         base::CommandLine::ForCurrentProcess();
@@ -359,11 +368,16 @@ bool IsChromeFirstRun() {
         command_line->HasSwitch(switches::kNoFirstRun));
   }
   return g_first_run == internal::FIRST_RUN_TRUE;
+#endif
 }
 
 #if BUILDFLAG(IS_MAC)
 bool IsFirstRunSuppressed(const base::CommandLine& command_line) {
+#if BUILDFLAG(AGENTSEARCH_BRANDING)
+  return true;
+#else
   return command_line.HasSwitch(switches::kNoFirstRun);
+#endif
 }
 #endif
 

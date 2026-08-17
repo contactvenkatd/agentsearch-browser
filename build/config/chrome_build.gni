@@ -49,6 +49,13 @@ declare_args() {
   }
 }
 
+declare_args() {
+  # This fork's Chromium branding is the AgentSearch product. Keep product
+  # behavior available as an explicit build flag rather than relying on launch
+  # switches or runtime bundle-name checks.
+  is_agentsearch_branded = !is_chrome_branded && !is_chrome_for_testing
+}
+
 # Use this for is_chrome_branded things that live in src-internal.
 # See: b/452971335
 is_internal_chrome_branded = enable_src_internal && is_chrome_branded

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -21,7 +22,6 @@
 #include "base/strings/strcat.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -75,6 +75,7 @@
 #include "chrome/browser/ui/webui/new_tab_page/action_chips/action_chips_handler.h"
 #include "chrome/browser/ui/webui/new_tab_page/action_chips/action_chips_metrics.h"
 #include "chrome/browser/ui/webui/new_tab_page/action_chips/tab_id_generator.h"
+#include "chrome/browser/ui/webui/new_tab_page/agent_search_provider.h"
 #include "chrome/browser/ui/webui/new_tab_page/composebox/variations/composebox_fieldtrial.h"
 #include "chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.h"
 #include "chrome/browser/ui/webui/new_tab_page/untrusted_source.h"
@@ -137,12 +138,14 @@
 #include "google_apis/gaia/gaia_urls.h"
 #include "media/base/media_switches.h"
 #include "mojo/public/cpp/base/big_buffer.h"
+#include "net/base/net_errors.h"
 #include "net/base/url_util.h"
 #include "net/http/http_request_headers.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "skia/ext/skia_utils_base.h"
 #include "third_party/omnibox_proto/chrome_aim_entry_point.pb.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -210,6 +213,12 @@ constexpr char kAIMDisplayMode[] = "50";
 constexpr char kAIMThreadsVisibilityMode[] = "3";
 constexpr char kAgentSearchEndpoint[] =
     "https://agentsearch-searxng.onrender.com/search";
+constexpr char kAgentSearchGoogleApiKeyEnvironment[] =
+    "AGENTSEARCH_GOOGLE_SEARCH_API_KEY";
+constexpr char kAgentSearchGoogleEngineIdEnvironment[] =
+    "AGENTSEARCH_GOOGLE_SEARCH_ENGINE_ID";
+constexpr base::TimeDelta kAgentSearchTimeout = base::Seconds(15);
+constexpr base::TimeDelta kAgentSearchEngineTimeout = base::Seconds(5);
 constexpr char kAgentSearchLocationEndpoint[] =
     "https://api.bigdatacloud.net/data/reverse-geocode-client";
 constexpr char kAgentSearchWeatherEndpoint[] =
@@ -559,6 +568,13 @@ class AgentSearchMessageHandler : public content::WebUIMessageHandler {
     }
     const std::string& query = args[1].GetString();
     const std::string& category = args[2].GetString();
+    if (category != "general" && category != "news" &&
+        category != "images" && category != "videos" &&
+        category != "map") {
+      RejectJavascriptCallback(callback_id,
+                               base::Value("Invalid search category"));
+      return;
+    }
 
     base::ListValue search_history =
         Profile::FromWebUI(web_ui())
@@ -583,10 +599,82 @@ class AgentSearchMessageHandler : public content::WebUIMessageHandler {
                      ->GetList(kAgentSearchSearchHistoryPref)
                      .size();
 
+    if (category == "general") {
+      std::unique_ptr<base::Environment> environment =
+          base::Environment::Create();
+      std::optional<std::string> api_key =
+          environment->GetVar(kAgentSearchGoogleApiKeyEnvironment);
+      std::optional<std::string> engine_id =
+          environment->GetVar(kAgentSearchGoogleEngineIdEnvironment);
+      if (api_key && engine_id &&
+          agent_search::HasGoogleConfiguration(*api_key, *engine_id)) {
+        StartGoogleSearch(callback_id.Clone(), query, *api_key, *engine_id);
+        return;
+      }
+    }
+    StartSearxSearch(callback_id.Clone(), query, category, 0u);
+  }
+
+  void StartGoogleSearch(base::Value callback_id,
+                         const std::string& query,
+                         const std::string& api_key,
+                         const std::string& engine_id) {
+    auto request = std::make_unique<network::ResourceRequest>();
+    request->url =
+        agent_search::BuildGoogleSearchUrl(api_key, engine_id, query);
+    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+    net::NetworkTrafficAnnotationTag traffic_annotation =
+        net::DefineNetworkTrafficAnnotation("agentsearch_google_search", R"(
+          semantics {
+            sender: "AgentSearch results page"
+            description:
+              "Fetches general web-search results from the configured Google "
+              "Programmable Search Engine after the user submits a query."
+            trigger: "The user submits a general AgentSearch query."
+            data: "The search query, API key, and search engine identifier."
+            destination: GOOGLE_OWNED_SERVICE
+          }
+          policy {
+            cookies_allowed: NO
+            setting:
+              "This runs only when the local AgentSearch Google search "
+              "environment variables are configured."
+            policy_exception_justification:
+              "No enterprise policy is provided for this local integration."
+          })");
+    loader_ = network::SimpleURLLoader::Create(std::move(request),
+                                               traffic_annotation);
+    loader_->SetAllowHttpErrorResults(true);
+    loader_->SetTimeoutDuration(kAgentSearchEngineTimeout);
+    const base::TimeTicks started_at = base::TimeTicks::Now();
+    loader_->DownloadToString(
+        web_ui()->GetWebContents()
+            ->GetBrowserContext()
+            ->GetDefaultStoragePartition()
+            ->GetURLLoaderFactoryForBrowserProcess()
+            .get(),
+        base::BindOnce(&AgentSearchMessageHandler::OnGoogleSearchComplete,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(callback_id),
+                       query, started_at),
+        kAgentSearchMaxResponseBytes);
+  }
+
+  void StartSearxSearch(base::Value callback_id,
+                        const std::string& query,
+                        const std::string& category,
+                        size_t engine_index) {
     GURL url(kAgentSearchEndpoint);
     url = net::AppendQueryParameter(url, "q", query);
     url = net::AppendQueryParameter(url, "format", "json");
-    url = net::AppendQueryParameter(url, "categories", category);
+    url = net::AppendQueryParameter(url, "language", "en-US");
+    url = net::AppendQueryParameter(url, "safesearch", "0");
+    if (category == "general") {
+      CHECK_LT(engine_index, agent_search::SearxFallbackEngines().size());
+      url = net::AppendQueryParameter(
+          url, "engines", agent_search::SearxFallbackEngines()[engine_index]);
+    } else {
+      url = net::AppendQueryParameter(url, "categories", category);
+    }
 
     auto request = std::make_unique<network::ResourceRequest>();
     request->url = url;
@@ -611,6 +699,10 @@ class AgentSearchMessageHandler : public content::WebUIMessageHandler {
           })");
     loader_ = network::SimpleURLLoader::Create(std::move(request),
                                                traffic_annotation);
+    loader_->SetTimeoutDuration(category == "general"
+                                    ? kAgentSearchEngineTimeout
+                                    : kAgentSearchTimeout);
+    const base::TimeTicks started_at = base::TimeTicks::Now();
     loader_->DownloadToString(
         web_ui()->GetWebContents()
             ->GetBrowserContext()
@@ -618,17 +710,95 @@ class AgentSearchMessageHandler : public content::WebUIMessageHandler {
             ->GetURLLoaderFactoryForBrowserProcess()
             .get(),
         base::BindOnce(&AgentSearchMessageHandler::OnSearchComplete,
-                       weak_ptr_factory_.GetWeakPtr(), callback_id.Clone()),
+                       weak_ptr_factory_.GetWeakPtr(), std::move(callback_id),
+                       query, category, engine_index, started_at),
         kAgentSearchMaxResponseBytes);
   }
 
-  void OnSearchComplete(base::Value callback_id,
-                        std::optional<std::string> body) {
-    if (!body) {
-      RejectJavascriptCallback(callback_id, base::Value("Search failed"));
+  void OnGoogleSearchComplete(base::Value callback_id,
+                              std::string query,
+                              base::TimeTicks started_at,
+                              std::optional<std::string> body) {
+    const bool network_ok = loader_ && loader_->NetError() == net::OK;
+    const int http_status =
+        network_ok && loader_->ResponseInfo() &&
+                loader_->ResponseInfo()->headers
+            ? loader_->ResponseInfo()->headers->response_code()
+            : 0;
+    const bool content_type_ok =
+        network_ok && loader_->ResponseInfo() &&
+        loader_->ResponseInfo()->mime_type == "application/json";
+    agent_search::NormalizedResponse normalized;
+    if (network_ok && body) {
+      normalized = agent_search::NormalizeGoogleResponse(*body, query);
+    }
+    const bool success = http_status >= 200 && http_status <= 299 &&
+                         content_type_ok &&
+                         normalized.status ==
+                             agent_search::ResponseStatus::kSuccess;
+    VLOG(1) << "AgentSearch provider=google latency_ms="
+            << (base::TimeTicks::Now() - started_at).InMilliseconds()
+            << " http_status=" << http_status
+            << " result_count=" << normalized.result_count
+            << " outcome=" << (success ? "used" : "fallback");
+    if (success) {
+      ResolveJavascriptCallback(callback_id,
+                                base::Value(std::move(normalized.json)));
       return;
     }
-    ResolveJavascriptCallback(callback_id, base::Value(std::move(*body)));
+    StartSearxSearch(std::move(callback_id), query, "general", 0u);
+  }
+
+  void OnSearchComplete(base::Value callback_id,
+                        std::string query,
+                        std::string category,
+                        size_t engine_index,
+                        base::TimeTicks started_at,
+                        std::optional<std::string> body) {
+    const bool network_ok = loader_ && loader_->NetError() == net::OK;
+    const bool http_ok =
+        network_ok && loader_->ResponseInfo() &&
+        loader_->ResponseInfo()->headers &&
+        loader_->ResponseInfo()->headers->response_code() >= 200 &&
+        loader_->ResponseInfo()->headers->response_code() <= 299;
+    agent_search::NormalizedResponse normalized;
+    if (http_ok && body) {
+      normalized = agent_search::NormalizeSearxResponse(
+          *body, query, category == "general");
+    }
+    const bool usable =
+        normalized.status == agent_search::ResponseStatus::kSuccess;
+    if (usable) {
+      if (category == "general") {
+        VLOG(1) << "AgentSearch engine="
+                << agent_search::SearxFallbackEngines()[engine_index]
+                << " latency_ms="
+                << (base::TimeTicks::Now() - started_at).InMilliseconds()
+                << " usable_results=" << normalized.result_count
+                << " outcome=used";
+      }
+      ResolveJavascriptCallback(callback_id,
+                                base::Value(std::move(normalized.json)));
+      return;
+    }
+
+    if (category == "general") {
+      VLOG(1) << "AgentSearch engine="
+              << agent_search::SearxFallbackEngines()[engine_index]
+              << " latency_ms="
+              << (base::TimeTicks::Now() - started_at).InMilliseconds()
+              << " usable_results=" << normalized.result_count
+              << " outcome=fallback";
+      if (++engine_index < agent_search::SearxFallbackEngines().size()) {
+        StartSearxSearch(std::move(callback_id), query, category, engine_index);
+        return;
+      }
+      RejectJavascriptCallback(
+          callback_id, base::Value("Search providers unavailable"));
+      return;
+    }
+    RejectJavascriptCallback(callback_id,
+                             base::Value("Search service unavailable"));
   }
 
   void HandleLocation(const base::ListValue& args) {

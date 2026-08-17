@@ -4,14 +4,18 @@ import {sendWithPromise} from 'chrome://resources/js/cr.js';
 interface SearxResult {
   title?: string;
   url?: string;
-  content?: string;
-  engine?: string;
+  snippet?: string;
+  displayUrl?: string;
+  provider?: string;
+  publishedDate?: string;
+  thumbnail?: string;
 }
 
 interface SearxResponse {
   query?: string;
   number_of_results?: number;
   results?: SearxResult[];
+  unresponsive_engines?: unknown[];
 }
 
 const params = new URLSearchParams(location.search);
@@ -59,11 +63,16 @@ function badgeColor(domain: string): string {
   return colors[hash % colors.length]!;
 }
 
-function appendResult(item: SearxResult) {
+function appendResult(item: SearxResult): boolean {
   if (!item.url) {
-    return;
+    return false;
   }
-  const url = new URL(item.url);
+  let url: URL;
+  try {
+    url = new URL(item.url);
+  } catch {
+    return false;
+  }
   const domain = url.hostname.replace(/^www\./, '');
   const article = document.createElement('article');
   article.className = 'result';
@@ -92,9 +101,39 @@ function appendResult(item: SearxResult) {
   heading.appendChild(link);
 
   const snippet = document.createElement('p');
-  snippet.textContent = item.content || `Result from ${domain}`;
+  snippet.textContent = item.snippet || `Result from ${domain}`;
   article.append(source, heading, snippet);
   results.appendChild(article);
+  return true;
+}
+
+function showStatus(meta: string, message: string) {
+  resultMeta.textContent = meta;
+  const card = document.createElement('div');
+  card.className = 'statusCard';
+  card.textContent = message;
+  results.replaceChildren(card);
+}
+
+function showRequestFailure(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error);
+  if (detail.includes('timed out')) {
+    showStatus(
+        'Search timed out',
+        'The search service took too long to respond. Please try again.');
+  } else if (detail.includes('returned an error')) {
+    showStatus(
+        'Search service error',
+        'The search service returned an error. Please try again.');
+  } else if (detail.includes('providers unavailable')) {
+    showStatus(
+        'Search providers unavailable',
+        'Search providers are temporarily unavailable. Please try again.');
+  } else {
+    showStatus(
+        'AgentSearch backend unavailable',
+        'The search service could not be reached. Please try again.');
+  }
 }
 
 async function loadResults() {
@@ -103,26 +142,47 @@ async function loadResults() {
     return;
   }
   const start = performance.now();
+  let body: string;
   try {
-    const body = await sendWithPromise<string>('agentSearch', query, category);
-    const data = JSON.parse(body) as SearxResponse;
-    const items = data.results || [];
-    const elapsed = ((performance.now() - start) / 1000).toFixed(2);
-    const count = data.number_of_results || items.length;
-    resultMeta.textContent =
-        `About ${count.toLocaleString()} results (${elapsed} seconds)`;
-    items.forEach(appendResult);
-    if (!items.length) {
-      results.innerHTML =
-          '<div class="statusCard">No results matched this search.</div>';
-    }
+    body = await sendWithPromise<string>('agentSearch', query, category);
   } catch (error) {
-    resultMeta.textContent = 'AgentSearch backend unavailable';
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const card = document.createElement('div');
-    card.className = 'statusCard';
-    card.textContent = `${message}. Please try the search again.`;
-    results.appendChild(card);
+    showRequestFailure(error);
+    return;
+  }
+
+  let data: SearxResponse;
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (!parsed || typeof parsed !== 'object' ||
+        !Array.isArray((parsed as SearxResponse).results) ||
+        (parsed as SearxResponse).query !== query) {
+      throw new Error('Unexpected search response');
+    }
+    data = parsed as SearxResponse;
+  } catch {
+    showStatus(
+        'Invalid search response',
+        'The search service returned invalid data. Please try again.');
+    return;
+  }
+
+  const items = data.results!;
+  const elapsed = ((performance.now() - start) / 1000).toFixed(2);
+  const count = typeof data.number_of_results === 'number' ?
+      data.number_of_results :
+      items.length;
+  resultMeta.textContent =
+      `About ${count.toLocaleString()} results (${elapsed} seconds)`;
+  const renderedCount = items.reduce(
+      (total, item) => total + (appendResult(item) ? 1 : 0), 0);
+  if (!renderedCount && data.unresponsive_engines?.length) {
+    showStatus(
+        'Search providers unavailable',
+        'Search providers did not respond. Please try again.');
+  } else if (!renderedCount) {
+    showStatus(
+        `About 0 results (${elapsed} seconds)`,
+        'No results matched this search.');
   }
 }
 

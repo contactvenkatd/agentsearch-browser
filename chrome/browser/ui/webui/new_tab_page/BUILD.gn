@@ -60,6 +60,7 @@ source_set("new_tab_page") {
 # Full implementation target.
 source_set("impl") {
   sources = [
+    "agent_search_provider.cc",
     "new_tab_page_handler.cc",
     "new_tab_page_ui.cc",
     "untrusted_source.cc",
@@ -208,6 +209,7 @@ source_set("impl") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "agent_search_provider_unittest.cc",
     "new_tab_page_handler_unittest.cc",
     "new_tab_page_ui_unittest.cc",
     "untrusted_source_unittest.cc",

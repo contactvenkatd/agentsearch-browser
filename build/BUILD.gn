@@ -33,6 +33,8 @@ buildflag_header("branding_buildflags") {
     ]
   }
 
+  flags += [ "AGENTSEARCH_BRANDING=$is_agentsearch_branded" ]
+
   if (is_chrome_for_testing) {
     assert(!is_chrome_branded,
            "`is_chrome_for_testing` is incompatible with `is_chrome_branded`")

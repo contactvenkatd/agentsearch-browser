@@ -46,6 +46,7 @@ source_set("impl") {
   ]
 
   deps = [
+    "//build:branding_buildflags",
     "//chrome/browser/bookmarks",
     "//chrome/browser/favicon",
     "//chrome/browser/google",

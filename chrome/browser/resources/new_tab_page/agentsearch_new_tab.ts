@@ -1,7 +1,6 @@
 // eslint-disable-next-line no-restricted-imports
 import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
 
-const RESULTS_URL = 'chrome://new-tab-page/agentsearch_results.html';
 const BACKGROUND_KEY = 'agentsearch.background';
 
 interface LocationData {
@@ -222,20 +221,6 @@ document.querySelectorAll<HTMLAnchorElement>('#shortcuts a.shortcut')
       image.src = faviconUrl(shortcut.href);
       icon.appendChild(image);
     });
-
-const searchForm = document.querySelector<HTMLFormElement>('#searchForm')!;
-searchForm.addEventListener('submit', event => {
-  event.preventDefault();
-  const input = document.querySelector<HTMLInputElement>('#searchInput')!;
-  const query = input.value.trim();
-  if (!query) {
-    return;
-  }
-  const destination =
-      `${RESULTS_URL}?${new URLSearchParams({q: query, category: 'general'})}`;
-  console.info(`AgentSearch dashboard destination: ${destination}`);
-  location.assign(destination);
-});
 
 document.querySelector('#backgroundButton')!.addEventListener('click', () => {
   backgroundMenu.hidden = !backgroundMenu.hidden;

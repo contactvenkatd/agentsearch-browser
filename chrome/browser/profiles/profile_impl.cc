@@ -1144,7 +1144,13 @@ void ProfileImpl::OnLocaleReady(CreateMode create_mode) {
   TRACE_EVENT0("browser", "ProfileImpl::OnLocaleReady");
 
   // Migrate obsolete prefs.
-  MigrateObsoleteProfilePrefs(GetPrefs(), GetPath());
+  // AgentSearch's migration removes obsolete native password database files.
+  // PathExists() and DeleteFile() are blocking operations, but locale readiness
+  // can complete after startup has disallowed blocking on the UI thread.
+  {
+    ScopedAllowBlockingForProfile allow_blocking;
+    MigrateObsoleteProfilePrefs(GetPrefs(), GetPath());
+  }
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   // Note: Extension preferences can be keyed off the extension ID, so need to
   // be handled specially (rather than directly as part of

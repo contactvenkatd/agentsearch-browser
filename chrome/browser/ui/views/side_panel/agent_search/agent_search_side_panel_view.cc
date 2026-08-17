@@ -2,6 +2,7 @@
 
 #include "chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.h"
 
+#include <limits>
 #include <memory>
 
 #include "base/functional/bind.h"
@@ -43,8 +44,10 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
+#include "ui/views/controls/throbber.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/view.h"
 
@@ -57,6 +60,7 @@ constexpr SkColor kMutedText = SkColorSetRGB(0xC4, 0xC4, 0xC8);
 constexpr char kAgentSearchChatHistoryPref[] = "agentsearch.chat_history";
 constexpr char kAgentBridgeBaseUrl[] = "http://127.0.0.1:9333";
 constexpr size_t kMaxBridgeResponseBytes = 1024 * 1024;
+constexpr int kAutoScrollTolerance = 32;
 
 std::unique_ptr<views::Label> CreateLabel(const std::u16string& text,
                                           SkColor color,
@@ -137,24 +141,34 @@ class AgentSearchSidePanelView : public views::View,
 
     empty_state_->AddChildView(CreatePromptCard(
         u"Find flights under $600",
-        base::BindRepeating(&AgentSearchSidePanelView::NavigateToSearchResults,
+        base::BindRepeating(&AgentSearchSidePanelView::NavigateToGoogleSearch,
                             base::Unretained(this),
                             u"Find flights under $600")));
     empty_state_->AddChildView(CreatePromptCard(
         u"Summarize this article",
-        base::BindRepeating(&AgentSearchSidePanelView::NavigateToSearchResults,
+        base::BindRepeating(&AgentSearchSidePanelView::NavigateToGoogleSearch,
                             base::Unretained(this),
                             u"Summarize this article")));
 
-    message_list_ = AddChildView(std::make_unique<views::View>());
+    message_scroll_view_ =
+        AddChildView(std::make_unique<views::ScrollView>());
+    message_scroll_view_->SetHorizontalScrollBarMode(
+        views::ScrollView::ScrollBarMode::kDisabled);
+    message_scroll_view_->ClipHeightTo(0, std::numeric_limits<int>::max());
+    message_scroll_view_->SetUseContentsPreferredSize(true);
+    message_list_ =
+        message_scroll_view_->SetContents(std::make_unique<views::View>());
+    message_scroll_view_->RegisterPostLayoutCallback(base::BindRepeating(
+        &AgentSearchSidePanelView::OnMessageScrollViewLayout,
+        weak_ptr_factory_.GetWeakPtr()));
     auto* message_layout =
         message_list_->SetLayoutManager(std::make_unique<views::BoxLayout>(
             views::BoxLayout::Orientation::kVertical, gfx::Insets::VH(12, 0),
             10));
     message_layout->set_cross_axis_alignment(
         views::BoxLayout::CrossAxisAlignment::kStretch);
-    message_list_->SetVisible(false);
-    root_layout->SetFlexForView(message_list_, 1);
+    message_scroll_view_->SetVisible(false);
+    root_layout->SetFlexForView(message_scroll_view_, 1);
 
     auto* composer = AddChildView(std::make_unique<views::View>());
     constexpr SkColor kComposerBackground = SkColorSetRGB(0x2A, 0x2A, 0x2D);
@@ -172,9 +186,18 @@ class AgentSearchSidePanelView : public views::View,
     input_->SetController(this);
     composer_layout->SetFlexForView(input_, 1);
 
+    cancel_ = composer->AddChildView(std::make_unique<views::LabelButton>(
+        base::BindRepeating(&AgentSearchSidePanelView::OnCancelPressed,
+                            weak_ptr_factory_.GetWeakPtr()),
+        u"Cancel"));
+    cancel_->SetEnabledTextColors(kMutedText);
+    cancel_->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(6, 8)));
+    cancel_->SetVisible(false);
+
     send_ = composer->AddChildView(
         std::make_unique<views::ImageButton>(base::BindRepeating(
-            &AgentSearchSidePanelView::OnSendPressed, base::Unretained(this))));
+            &AgentSearchSidePanelView::OnSendPressed,
+            weak_ptr_factory_.GetWeakPtr())));
     send_->SetPreferredSize(gfx::Size(28, 28));
     send_->SetImageHorizontalAlignment(views::ImageButton::ALIGN_CENTER);
     send_->SetImageVerticalAlignment(views::ImageButton::ALIGN_MIDDLE);
@@ -212,6 +235,9 @@ class AgentSearchSidePanelView : public views::View,
   }
 
   void OnSendPressed() {
+    if (task_active_) {
+      return;
+    }
     std::u16string message(input_->GetText());
     base::TrimWhitespace(message, base::TRIM_ALL, &message);
     if (message.empty()) {
@@ -219,15 +245,45 @@ class AgentSearchSidePanelView : public views::View,
     }
 
     empty_state_->SetVisible(false);
-    message_list_->SetVisible(true);
+    message_scroll_view_->SetVisible(true);
     AppendMessage(message, true, true);
     input_->SetText(std::u16string());
-    UpdateSendButtonState();
+    run_has_assistant_message_ = false;
+    SetTaskActive(true);
+    ShowWorkingIndicator();
 
     StartAgentTask(message);
   }
 
+  void OnCancelPressed() {
+    if (!task_active_ || run_id_.empty()) {
+      return;
+    }
+    cancel_->SetEnabled(false);
+    bridge_loader_.reset();
+    SendBridgeRequest(
+        "POST", "/v1/tasks/" + run_id_ + "/cancel", std::nullopt,
+        base::BindOnce(&AgentSearchSidePanelView::OnCancelSent,
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
+
+  void OnCancelSent(std::optional<base::DictValue> response) {
+    if (!response || !response->FindBool("ok").value_or(false)) {
+      const std::string* error =
+          response ? response->FindString("error") : nullptr;
+      AppendMessage(
+          base::UTF8ToUTF16(
+              error ? *error
+                    : "The cancellation request could not be delivered."),
+          false, true);
+      cancel_->SetEnabled(true);
+      return;
+    }
+    PollAgentEvents();
+  }
+
   void AppendMessage(const std::u16string& text, bool from_user, bool persist) {
+    const bool should_scroll_to_latest = IsNearBottom();
     auto label = CreateLabel(text, from_user ? kPrimaryText : kMutedText, 0);
     label->SetMultiLine(true);
     label->SetMaximumWidth(250);
@@ -239,20 +295,59 @@ class AgentSearchSidePanelView : public views::View,
         10));
     message_list_->AddChildView(std::move(label));
     message_list_->InvalidateLayout();
+    if (should_scroll_to_latest) {
+      ScheduleScrollToLatestMessage();
+    }
     if (persist) {
       PersistMessage(text, from_user);
     }
   }
 
+  void ShowWorkingIndicator() {
+    if (working_indicator_) {
+      return;
+    }
+    const bool should_scroll_to_latest = IsNearBottom();
+    auto indicator = std::make_unique<views::View>();
+    indicator->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(8, 10)));
+    indicator->SetBackground(views::CreateRoundedRectBackground(kSurface, 10));
+    indicator->SetLayoutManager(std::make_unique<views::BoxLayout>(
+        views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 8));
+    auto* throbber = indicator->AddChildView(std::make_unique<views::Throbber>());
+    throbber->SetPreferredSize(gfx::Size(16, 16));
+    throbber->Start();
+    indicator->AddChildView(CreateLabel(u"Working…", kMutedText));
+    working_indicator_ = message_list_->AddChildView(std::move(indicator));
+    message_list_->InvalidateLayout();
+    if (should_scroll_to_latest) {
+      ScheduleScrollToLatestMessage();
+    }
+  }
+
+  void RemoveWorkingIndicator() {
+    if (!working_indicator_) {
+      return;
+    }
+    // Clear the BackupRefPtr while the child is still alive. RemoveChildViewT()
+    // returns an owning unique_ptr that is destroyed at the end of its full
+    // expression; releasing working_indicator_ after that destruction is
+    // diagnosed as a dangling raw_ptr release.
+    views::View* indicator = working_indicator_;
+    working_indicator_ = nullptr;
+    message_list_->RemoveChildViewT(indicator);
+    message_list_->InvalidateLayout();
+  }
+
   void StartAgentTask(const std::u16string& task) {
     tabs::TabInterface* active_tab = browser_->GetActiveTabInterface();
     if (!active_tab) {
+      RemoveWorkingIndicator();
       AppendMessage(u"No active browser tab is available.", false, true);
+      SetTaskActive(false);
       return;
     }
     scoped_refptr<content::DevToolsAgentHost> agent_host =
-        content::DevToolsAgentHost::GetOrCreateForTab(
-            active_tab->GetContents());
+        content::DevToolsAgentHost::GetOrCreateFor(active_tab->GetContents());
     base::DictValue request;
     request.Set("task", base::UTF16ToUTF8(task));
     request.Set("targetId", agent_host->GetId());
@@ -288,6 +383,7 @@ class AgentSearchSidePanelView : public views::View,
           })");
     bridge_loader_ = network::SimpleURLLoader::Create(std::move(request),
                                                       kTrafficAnnotation);
+    bridge_loader_->SetAllowHttpErrorResults(true);
     if (body) {
       std::string json;
       base::JSONWriter::Write(*body, &json);
@@ -321,21 +417,27 @@ class AgentSearchSidePanelView : public views::View,
 
   void OnTaskStarted(std::optional<base::DictValue> response) {
     if (!response) {
+      RemoveWorkingIndicator();
       AppendMessage(
           u"Agent bridge unavailable. Start it with `npm start` in "
           u"agent-bridge.",
           false, true);
+      SetTaskActive(false);
       return;
     }
     const std::string* run_id = response->FindString("runId");
     if (!run_id) {
+      RemoveWorkingIndicator();
       const std::string* error = response->FindString("error");
       AppendMessage(base::UTF8ToUTF16(error ? *error : "Bridge rejected task."),
                     false, true);
+      SetTaskActive(false);
       return;
     }
     run_id_ = *run_id;
     last_event_sequence_ = 0;
+    cancel_->SetVisible(true);
+    cancel_->SetEnabled(true);
     PollAgentEvents();
   }
 
@@ -353,11 +455,13 @@ class AgentSearchSidePanelView : public views::View,
 
   void OnAgentEvents(std::optional<base::DictValue> response) {
     if (!response) {
+      RemoveWorkingIndicator();
       AppendMessage(u"Lost contact with the agent bridge.", false, true);
-      run_id_.clear();
+      FinishRun();
       return;
     }
     const base::ListValue* events = response->FindList("events");
+    std::optional<std::u16string> terminal_message;
     if (events) {
       for (const base::Value& value : *events) {
         const base::DictValue* event = value.GetIfDict();
@@ -372,32 +476,49 @@ class AgentSearchSidePanelView : public views::View,
           continue;
         }
         if (*type == "confirmation_required") {
+          RemoveWorkingIndicator();
           const std::string* confirmation_id =
               event->FindString("confirmationId");
           if (confirmation_id) {
             AppendPurchaseConfirmation(base::UTF8ToUTF16(*text),
                                        *confirmation_id);
           }
-        } else {
-          AppendMessage(base::UTF8ToUTF16(*text), false,
-                        event->FindBool("persist").value_or(false));
+        } else if (*type == "assistant_message") {
+          AppendMessage(base::UTF8ToUTF16(*text), false, true);
+          run_has_assistant_message_ = true;
+        } else if (*type == "error" || *type == "cancelled") {
+          terminal_message = base::UTF8ToUTF16(*text);
         }
       }
     }
     const std::string* status = response->FindString("status");
-    if (status && *status == "running") {
+    if (!status) {
+      RemoveWorkingIndicator();
+      AppendMessage(u"The agent bridge returned an invalid task status.",
+                    false, true);
+      FinishRun();
+    } else if (*status == "running") {
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
           FROM_HERE,
           base::BindOnce(&AgentSearchSidePanelView::PollAgentEvents,
                          weak_ptr_factory_.GetWeakPtr()),
           base::Milliseconds(400));
-    } else {
-      run_id_.clear();
+    } else if (*status != "awaiting_confirmation") {
+      RemoveWorkingIndicator();
+      if (*status == "done" && !run_has_assistant_message_) {
+        AppendMessage(u"Done", false, true);
+      } else if (terminal_message) {
+        AppendMessage(*terminal_message, false, true);
+      } else if (*status == "denied") {
+        AppendMessage(u"Action denied. Nothing was performed.", false, true);
+      }
+      FinishRun();
     }
   }
 
   void AppendPurchaseConfirmation(const std::u16string& summary,
                                   const std::string& confirmation_id) {
+    const bool should_scroll_to_latest = IsNearBottom();
     auto card = std::make_unique<views::View>();
     card->SetBackground(views::CreateRoundedRectBackground(kSurface, 10));
     card->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(10, 10)));
@@ -412,17 +533,20 @@ class AgentSearchSidePanelView : public views::View,
     auto* approve = buttons->AddChildView(CreatePromptCard(
         u"Approve", base::BindRepeating(
                         &AgentSearchSidePanelView::ResolvePurchaseConfirmation,
-                        base::Unretained(this), confirmation_id, true)));
+                        weak_ptr_factory_.GetWeakPtr(), confirmation_id, true)));
     auto* deny = buttons->AddChildView(CreatePromptCard(
         u"Deny", base::BindRepeating(
                      &AgentSearchSidePanelView::ResolvePurchaseConfirmation,
-                     base::Unretained(this), confirmation_id, false)));
+                     weak_ptr_factory_.GetWeakPtr(), confirmation_id, false)));
     approve->SetPreferredSize(gfx::Size(105, 38));
     deny->SetPreferredSize(gfx::Size(105, 38));
     confirmation_buttons_ = buttons;
     displayed_confirmation_id_ = confirmation_id;
     message_list_->AddChildView(std::move(card));
     message_list_->InvalidateLayout();
+    if (should_scroll_to_latest) {
+      ScheduleScrollToLatestMessage();
+    }
     PersistMessage(summary, false);
   }
 
@@ -447,13 +571,38 @@ class AgentSearchSidePanelView : public views::View,
   void OnConfirmationSent(bool approved,
                           std::optional<base::DictValue> response) {
     if (!response || !response->FindBool("ok").value_or(false)) {
-      AppendMessage(u"The purchase decision could not be delivered.", false,
-                    true);
+      const std::string* error =
+          response ? response->FindString("error") : nullptr;
+      AppendMessage(
+          base::UTF8ToUTF16(
+              error ? *error : "The action decision could not be delivered."),
+          false, true);
+      PollAgentEvents();
       return;
     }
     displayed_confirmation_id_.clear();
     confirmation_buttons_ = nullptr;
+    if (approved) {
+      ShowWorkingIndicator();
+    }
     PollAgentEvents();
+  }
+
+  void SetTaskActive(bool active) {
+    task_active_ = active;
+    input_->SetEnabled(!active);
+    cancel_->SetVisible(active && !run_id_.empty());
+    if (!active) {
+      cancel_->SetEnabled(true);
+    }
+    UpdateSendButtonState();
+  }
+
+  void FinishRun() {
+    run_id_.clear();
+    displayed_confirmation_id_.clear();
+    confirmation_buttons_ = nullptr;
+    SetTaskActive(false);
   }
 
   void PersistMessage(const std::u16string& text, bool from_user) {
@@ -483,7 +632,7 @@ class AgentSearchSidePanelView : public views::View,
       return;
     }
     empty_state_->SetVisible(false);
-    message_list_->SetVisible(true);
+    message_scroll_view_->SetVisible(true);
     for (const base::Value& value : history) {
       const base::DictValue* entry = value.GetIfDict();
       if (!entry) {
@@ -498,7 +647,7 @@ class AgentSearchSidePanelView : public views::View,
   }
 
   void UpdateSendButtonState() {
-    const bool has_input = input_ && !input_->GetText().empty();
+    const bool has_input = input_ && !input_->GetText().empty() && !task_active_;
     const SkColor background = has_input ? SkColorSetRGB(0x3D, 0xDC, 0x84)
                                          : SkColorSetRGB(0x3A, 0x3A, 0x3E);
     const SkColor icon = has_input ? SkColorSetRGB(0x06, 0x17, 0x0E)
@@ -514,7 +663,30 @@ class AgentSearchSidePanelView : public views::View,
     send_->SchedulePaint();
   }
 
-  void NavigateToSearchResults(std::u16string query) {
+  void ScheduleScrollToLatestMessage() {
+    scroll_to_latest_pending_ = true;
+    message_scroll_view_->InvalidateLayout();
+  }
+
+  bool IsNearBottom() const {
+    if (!message_scroll_view_ || !message_list_ ||
+        message_list_->children().empty()) {
+      return true;
+    }
+    const gfx::Rect visible_rect = message_scroll_view_->GetVisibleRect();
+    return visible_rect.bottom() >=
+           message_list_->height() - kAutoScrollTolerance;
+  }
+
+  void OnMessageScrollViewLayout(views::ScrollView* scroll_view) {
+    if (scroll_to_latest_pending_ && scroll_view->GetVisible() &&
+        !message_list_->children().empty()) {
+      scroll_to_latest_pending_ = false;
+      message_list_->children().back()->ScrollViewToVisible();
+    }
+  }
+
+  void NavigateToGoogleSearch(std::u16string query) {
     base::TrimWhitespace(query, base::TRIM_ALL, &query);
     if (query.empty()) {
       return;
@@ -528,21 +700,27 @@ class AgentSearchSidePanelView : public views::View,
     const std::string escaped_query =
         base::EscapeQueryParamValue(base::UTF16ToUTF8(query), true);
     content::NavigationController::LoadURLParams params(GURL(
-        "chrome://new-tab-page/agentsearch_results.html?q=" + escaped_query));
+        "https://www.google.com/search?q=" + escaped_query));
     params.transition_type = ui::PAGE_TRANSITION_GENERATED;
     active_tab->GetContents()->GetController().LoadURLWithParams(params);
   }
 
   raw_ptr<BrowserWindowInterface> browser_;
   raw_ptr<views::View> empty_state_ = nullptr;
+  raw_ptr<views::ScrollView> message_scroll_view_ = nullptr;
   raw_ptr<views::View> message_list_ = nullptr;
   raw_ptr<views::Textfield> input_ = nullptr;
+  raw_ptr<views::LabelButton> cancel_ = nullptr;
   raw_ptr<views::ImageButton> send_ = nullptr;
   raw_ptr<views::View> confirmation_buttons_ = nullptr;
+  raw_ptr<views::View> working_indicator_ = nullptr;
   std::unique_ptr<network::SimpleURLLoader> bridge_loader_;
   std::string run_id_;
   std::string displayed_confirmation_id_;
   int last_event_sequence_ = 0;
+  bool task_active_ = false;
+  bool run_has_assistant_message_ = false;
+  bool scroll_to_latest_pending_ = false;
   base::WeakPtrFactory<AgentSearchSidePanelView> weak_ptr_factory_{this};
 };
 

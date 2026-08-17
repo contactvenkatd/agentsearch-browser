@@ -17,7 +17,6 @@
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/rand_util.h"
-#include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -141,16 +140,6 @@
 #endif
 
 namespace {
-
-constexpr char kAgentSearchResultsUrl[] =
-    "chrome://new-tab-page/agentsearch_results.html";
-
-GURL GetAgentSearchResultsUrl(std::u16string_view query) {
-  return GURL(base::StrCat(
-      {kAgentSearchResultsUrl, "?q=",
-       base::EscapeQueryParamValue(base::UTF16ToUTF8(query), true),
-       "&category=general"}));
-}
 
 using ExtensionControlledDialogResult =
     ChromeOmniboxClient::ExtensionControlledDialogResult;
@@ -899,19 +888,6 @@ void ChromeOmniboxClient::OnAutocompleteAccept(
               text, "match", match, "alternative_nav_match",
               alternative_nav_match);
 
-  // AgentSearch routes search matches to its local results WebUI. Direct URL
-  // navigations retain their resolved destination. This override is applied at
-  // acceptance time so it also covers profiles whose persisted default search
-  // provider is still Google.
-  const GURL effective_destination_url =
-      AutocompleteMatch::IsSearchType(match_type)
-          ? GetAgentSearchResultsUrl(text)
-          : destination_url;
-  if (AutocompleteMatch::IsSearchType(match_type)) {
-    LOG(INFO) << "AgentSearch omnibox destination: "
-              << effective_destination_url;
-  }
-
   std::string extra_headers;
   for (const auto& header : match.extra_headers) {
     base::StrAppend(&extra_headers,
@@ -920,7 +896,7 @@ void ChromeOmniboxClient::OnAutocompleteAccept(
 
   // Store the details necessary to open the omnibox match via browser commands.
   location_bar_->set_navigation_params(LocationBar::NavigationParams(
-      effective_destination_url, disposition, transition,
+      destination_url, disposition, transition,
       match_selection_timestamp,
       destination_url_entered_without_scheme,
       destination_url_entered_with_http_scheme, extra_headers));
