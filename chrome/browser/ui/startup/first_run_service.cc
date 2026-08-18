@@ -12,6 +12,7 @@
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
+#include "build/branding_buildflags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile.h"
@@ -49,6 +50,13 @@ bool IsFirstRunEligibleProfile(Profile* profile) {
 }
 
 bool IsFirstRunEligibleProcess() {
+#if BUILDFLAG(AGENTSEARCH_BRANDING)
+  // AgentSearch does not offer Chrome/Chromium account sign-in. Block the
+  // desktop FirstRunService itself so it can never open the profile picker's
+  // chrome://intro sign-in screen, independently of sentinel or command-line
+  // first-run state.
+  return false;
+#else
   if (!first_run::IsChromeFirstRun()) {
     return false;
   }
@@ -59,6 +67,7 @@ bool IsFirstRunEligibleProcess() {
   // affected tests to handle correctly the FRE opening instead of a tab.
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kNoFirstRun);
+#endif
 }
 
 enum class PolicyEffect {

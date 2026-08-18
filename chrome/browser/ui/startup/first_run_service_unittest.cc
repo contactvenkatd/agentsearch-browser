@@ -7,6 +7,7 @@
 #include "base/files/file_path.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
+#include "build/branding_buildflags.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "chrome/browser/first_run/first_run.h"
@@ -77,6 +78,11 @@ TEST_F(FirstRunServiceTest, ShouldOpenFirstRun) {
   ASSERT_TRUE(profile_manager.SetUp());
 
   auto* profile = profile_manager.CreateTestingProfile("Test Profile");
+#if BUILDFLAG(AGENTSEARCH_BRANDING)
+  // AgentSearch must never instantiate the service that owns chrome://intro.
+  EXPECT_FALSE(ShouldOpenFirstRun(profile));
+  return;
+#else
   EXPECT_TRUE(ShouldOpenFirstRun(profile));
 
   SetIsFirstRun(false);
@@ -87,6 +93,7 @@ TEST_F(FirstRunServiceTest, ShouldOpenFirstRun) {
 
   g_browser_process->local_state()->SetBoolean(prefs::kFirstRunFinished, true);
   EXPECT_FALSE(ShouldOpenFirstRun(profile));
+#endif
 }
 
 // Regression test for crbug.com/40065181.
