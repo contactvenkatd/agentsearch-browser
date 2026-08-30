@@ -26,5 +26,12 @@ The loopback HTTP API is:
 Mock mode does not require CDP or an API key. Deterministic failure scenarios
 are selected by including one of these markers in the task:
 `[mock:slow]`, `[mock:confirmation]`, `[mock:navigation-failure]`,
-`[mock:timeout]`, `[mock:max-steps]`, `[mock:expired-confirmation]`, or
-`[mock:invalid-response]`.
+`[mock:timeout]`, `[mock:max-steps]`, or `[mock:invalid-response]`.
+
+Sanitized per-run action traces are appended to
+`/tmp/agentsearch-action-trace.jsonl`. Set `AGENTSEARCH_ACTION_TRACE_FILE` to
+override the destination.
+
+Sanitized Grok message payloads and hashes of the exact payloads are appended
+to `/tmp/agentsearch-api-payloads.jsonl`. Set `AGENTSEARCH_API_PAYLOAD_LOG` to
+override the destination.

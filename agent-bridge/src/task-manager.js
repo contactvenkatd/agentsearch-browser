@@ -1,11 +1,104 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const {decide, execute} = require('./agent-core');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const {decide, execute, RecoverableActionError} = require('./agent-core');
+const {isPageOrBrowserCrashError} = require('./chromium');
 
 const DEFAULT_STEP_LIMIT = 30;
 const DEFAULT_TASK_TIMEOUT_MS = 120000;
-const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60000;
+const DEFAULT_TRACE_FILE = path.join(os.tmpdir(),
+  'agentsearch-action-trace.jsonl');
+
+function safeTraceUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return '(unavailable)';
+  }
+}
+
+function cleanTraceText(value, maxLength = 240) {
+  return String(value || '')
+    .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[redacted-email]')
+    .replace(/(?:\d[ -]?){12,19}/g, '[redacted-number]')
+    .replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function requestedMilestones(task) {
+  const normalized = task.toLowerCase();
+  return {
+    searchSubmitted: /\bsearch\b/.test(normalized),
+    productPageOpened: /\b(?:open|select|choose|find)\b.{0,40}\b(?:product|item)\b/.test(normalized),
+    addToCartExecuted: /\badd\b.{0,20}\b(?:cart|basket)\b/.test(normalized),
+    cartObserved: /\b(?:cart|basket)\b/.test(normalized),
+    checkoutReached: /\bcheckout\b|\border confirmation\b/.test(normalized),
+    confirmationRequested: /\b(?:buy|purchase|place (?:the )?order|order confirmation)\b/.test(normalized),
+  };
+}
+
+function observeMilestones(run, observation) {
+  let url;
+  try { url = new URL(observation.url); } catch { url = null; }
+  const pathname = url?.pathname || '';
+  const pageText = `${observation.title || ''} ${observation.pageText || ''}`;
+  if (/\/(?:dp|gp\/product)\//i.test(pathname)) {
+    run.milestones.productPageOpened = true;
+    run.milestoneEvidence.product = cleanTraceText(observation.title, 160);
+  }
+  if (/\/(?:cart|gp\/cart)/i.test(pathname) || /\bshopping cart\b/i.test(pageText)) {
+    run.milestones.cartObserved = true;
+  }
+  if (/\/(?:checkout|gp\/buy|buy\/)/i.test(pathname) ||
+      /\bcheckout\b/i.test(observation.title || '')) {
+    run.milestones.checkoutReached = true;
+  }
+}
+
+function missingMilestones(run) {
+  return Object.keys(run.requiredMilestones).filter(name =>
+    run.requiredMilestones[name] && !run.milestones[name]);
+}
+
+function milestoneLabel(name) {
+  return ({searchSubmitted: 'submit the search',
+    productPageOpened: 'open the requested product page',
+    addToCartExecuted: 'add the requested item to the cart',
+    cartObserved: 'verify the cart', checkoutReached: 'reach checkout',
+    confirmationRequested: 'request purchase confirmation'})[name] || name;
+}
+
+function factualCompletionSummary(run, proposedSummary) {
+  const completed = [];
+  if (run.milestones.searchSubmitted) completed.push('submitted the search');
+  if (run.milestones.productPageOpened) completed.push(
+    `opened ${run.milestoneEvidence.product || 'a product page'}`);
+  if (run.milestones.addToCartExecuted) completed.push('executed Add to Cart');
+  if (run.milestones.cartObserved) completed.push('verified the cart page');
+  if (run.milestones.checkoutReached) completed.push('reached checkout');
+  if (run.milestones.confirmationRequested) completed.push(
+    'requested purchase confirmation');
+  if (Object.values(run.requiredMilestones).some(Boolean)) {
+    return `Task completed: ${completed.join(', ')}.`;
+  }
+  return cleanTraceText(proposedSummary, 500);
+}
+
+function isUngroundedProductRefusal(action, task = '') {
+  if (action.action !== 'respond' ||
+      !/\b(?:search|buy|purchase|cart|checkout|product|amazon)\b/i.test(task)) {
+    return false;
+  }
+  return /\b(?:does not|doesn't|doesnt) exist\b|\b(?:has|have|was|were|is|are) not (?:been )?released\b|\bnot released yet\b|\bno such product exists\b/i
+    .test(action.text || '');
+}
 
 function isPrivateHostname(hostname) {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -47,8 +140,8 @@ class TaskManager {
     this.runs = new Map();
     this.stepLimit = options.stepLimit || DEFAULT_STEP_LIMIT;
     this.taskTimeoutMs = options.taskTimeoutMs || DEFAULT_TASK_TIMEOUT_MS;
-    this.confirmationTimeoutMs = options.confirmationTimeoutMs ||
-      DEFAULT_CONFIRMATION_TIMEOUT_MS;
+    this.traceFile = options.traceFile || process.env.AGENTSEARCH_ACTION_TRACE_FILE ||
+      DEFAULT_TRACE_FILE;
   }
 
   create(task, targetId) {
@@ -58,7 +151,12 @@ class TaskManager {
       events: [], sequence: 0, messages: [], paymentFieldTouched: false,
       purchaseAuthorization: null, pendingConfirmation: null, cancelled: false,
       startedAt: now, deadline: now + taskTimeout, loopActive: false,
-      pendingSearchSubmission: false};
+      lastObservedUrl: null,
+      pendingSearchSubmission: false, actionTrace: [],
+      requiredMilestones: requestedMilestones(task),
+      milestones: {searchSubmitted: false, productPageOpened: false,
+        addToCartExecuted: false, cartObserved: false, checkoutReached: false,
+        confirmationRequested: false}, milestoneEvidence: {}};
     this.runs.set(run.id, run);
     this.emit(run, 'bridge_received', 'Bridge accepted the task.', false);
     void this.loop(run);
@@ -69,6 +167,23 @@ class TaskManager {
     if (run.cancelled && type !== 'cancelled') return;
     run.events.push({sequence: ++run.sequence, type, text, persist, ...data});
     console.debug(`[AgentSearch ${run.id}] ${type}: ${text}`);
+  }
+
+  traceAction(run, action, observation, element, afterUrl, result = 'ok') {
+    const entry = {timestamp: new Date().toISOString(), runId: run.id,
+      action: action.action, reasoning: cleanTraceText(action.reasoning),
+      element: element ? {id: element.id, tag: element.tag,
+        type: cleanTraceText(element.type, 40),
+        text: cleanTraceText(element.text, 160)} : null,
+      beforeUrl: safeTraceUrl(observation?.url),
+      afterUrl: safeTraceUrl(afterUrl || observation?.url), result};
+    run.actionTrace.push(entry);
+    try {
+      fs.appendFileSync(this.traceFile, `${JSON.stringify(entry)}\n`,
+        {encoding: 'utf8', mode: 0o600});
+    } catch (error) {
+      console.warn(`AgentSearch action trace write failed: ${error.message || error}`);
+    }
   }
 
   invalidateConfirmation(run) {
@@ -95,11 +210,14 @@ class TaskManager {
   async loop(run) {
     if (run.loopActive || !this.ensureRunning(run)) return;
     run.loopActive = true;
+    let resumeAfterCrash = false;
     try {
       for (let step = 1; step <= this.stepLimit; ++step) {
         if (!this.ensureRunning(run)) return;
         this.emit(run, 'page_observation_started', 'Reading the active page…');
         const observation = await this.connection.observe(run.targetId, run);
+        run.lastObservedUrl = observation.url;
+        observeMilestones(run, observation);
         if (!this.ensureRunning(run)) return;
         this.emit(run, 'page_observed',
           `Observed ${observation.title || observation.url} (${observation.elements.length} elements).`);
@@ -111,12 +229,14 @@ class TaskManager {
           action.reasoning || `Decided to ${action.action}.`, true,
           {action: action.action});
         if (action.action === 'request_purchase_confirmation') {
+          run.milestones.confirmationRequested = true;
+          this.traceAction(run, action, observation, null, observation.url);
           run.mockConfirmationRequested = true;
           const confirmationId = crypto.randomUUID();
           run.pendingConfirmation = {confirmationId,
-            toolCallId: action.toolCallId, expiresAt: Date.now() +
-              (/\[mock:expired-confirmation\]/i.test(run.task) ? 10 :
-                this.confirmationTimeoutMs), consumed: false};
+            toolCallId: action.toolCallId,
+            remainingTaskMs: Math.max(1, run.deadline - Date.now()),
+            consumed: false};
           run.status = 'awaiting_confirmation';
           this.emit(run, 'confirmation_required',
             action.summary || 'Confirm this action?', true,
@@ -124,6 +244,18 @@ class TaskManager {
           return;
         }
         if (action.action === 'respond') {
+          if (isUngroundedProductRefusal(action, run.task)) {
+            const correction = 'The response relied on an ungrounded product ' +
+              'existence or release-date assumption. Ignore prior knowledge, ' +
+              'continue from the live page evidence, and do not repeat that claim.';
+            run.messages.push({role: 'tool', tool_call_id: action.toolCallId,
+              content: correction});
+            this.traceAction(run, action, observation, null, observation.url,
+              'deferred: ungrounded product refusal');
+            this.emit(run, 'completion_deferred', correction);
+            continue;
+          }
+          this.traceAction(run, action, observation, null, observation.url);
           this.emit(run, 'assistant_message', action.text.trim(), true);
           run.status = 'done';
           this.invalidateConfirmation(run);
@@ -131,14 +263,26 @@ class TaskManager {
           return;
         }
         if (action.action === 'done') {
-          if (run.pendingSearchSubmission) {
+          const missing = missingMilestones(run);
+          if (run.pendingSearchSubmission || missing.length) {
+            const explanation = run.pendingSearchSubmission ?
+              'submit the entered search' : missing.map(milestoneLabel).join(', ');
             run.messages.push({role: 'tool', tool_call_id: action.toolCallId,
-              content: 'Task is not complete: the search text was entered but ' +
-                'has not been submitted. Press Enter on the search field.'});
+              content: `Task is not complete. You must still ${explanation}. ` +
+                'Continue using the page and do not claim completion.'});
             this.emit(run, 'completion_deferred',
-              'Search submission is still required.');
+              `Completion deferred; still required: ${explanation}.`);
+            this.traceAction(run, action, observation, null, observation.url,
+              'deferred');
             continue;
           }
+          const summary = factualCompletionSummary(run, action.summary);
+          if (!summary) {
+            throw new Error('Task did not complete as requested: the agent ' +
+              'provided no factual completion summary.');
+          }
+          this.traceAction(run, action, observation, null, observation.url);
+          this.emit(run, 'assistant_message', summary, true);
           run.status = 'done';
           this.invalidateConfirmation(run);
           this.emit(run, 'done', action.reasoning || 'Task complete.', true);
@@ -152,7 +296,27 @@ class TaskManager {
         }
         this.emit(run, 'action_started', `Executing ${action.action}…`);
         if (!this.ensureRunning(run)) return;
-        await execute(observation.page, action, run);
+        const actionElement = observation.elements.find(candidate =>
+          candidate.id === action.element_id);
+        const navigationLikely = action.action === 'navigate' ||
+          (action.action === 'click' && actionElement?.navigationLikely) ||
+          (action.action === 'press_enter' &&
+            (actionElement?.navigationLikely || actionElement?.type === 'search'));
+        try {
+          await execute(observation.page, action, run, {navigationLikely});
+        } catch (error) {
+          this.traceAction(run, action, observation, actionElement,
+            observation.page.url?.() || observation.url,
+            cleanTraceText(error.message || error));
+          if (!(error instanceof RecoverableActionError)) throw error;
+          const message = error.message || String(error);
+          console.warn(`[AgentSearch ${run.id}] recoverable_action_error: ${message}`);
+          run.messages.push({role: 'tool', tool_call_id: action.toolCallId,
+            content: `Action result: recoverable error. ${message}`});
+          this.emit(run, 'action_retry_required', message, true,
+            {action: action.action});
+          continue;
+        }
         if (!this.ensureRunning(run)) return;
         if (action.action === 'accept_autofill') run.paymentFieldTouched = true;
         if (action.action === 'type') {
@@ -163,7 +327,16 @@ class TaskManager {
           }
         } else if (action.action === 'press_enter') {
           run.pendingSearchSubmission = false;
+          if (actionElement?.type === 'search' || /\bsearch\b/i.test(run.task)) {
+            run.milestones.searchSubmitted = true;
+          }
+        } else if (action.action === 'click' &&
+            /\badd(?:ed)? to (?:cart|basket)\b/i.test(actionElement?.text || '')) {
+          run.milestones.addToCartExecuted = true;
         }
+        const afterUrl = observation.page.url?.() || observation.url;
+        run.lastObservedUrl = afterUrl;
+        this.traceAction(run, action, observation, actionElement, afterUrl);
         run.messages.push({role: 'tool', tool_call_id: action.toolCallId,
           content: 'Action result: ok'});
         this.emit(run, 'action_completed', `Completed ${action.action}.`, true,
@@ -171,10 +344,40 @@ class TaskManager {
       }
       this.fail(run, `Agent stopped after ${this.stepLimit} steps.`);
     } catch (error) {
-      this.fail(run, error.message || String(error));
+      if (isPageOrBrowserCrashError(error)) {
+        run.browserPageCrashed = true;
+        let recovery = {recovered: false};
+        try {
+          recovery = await this.connection.recoverAfterCrash?.(
+            run.targetId, run.lastObservedUrl) || recovery;
+        } catch (recoveryError) {
+          console.warn(`AgentSearch crash recovery failed: ${
+            recoveryError.message || recoveryError}`);
+        }
+        if (recovery.recovered && recovery.newTargetId) {
+          run.targetId = recovery.newTargetId;
+          run.browserPageCrashed = false;
+          resumeAfterCrash = true;
+          this.emit(run, 'action_retry_required',
+            'The browser page crashed, but a replacement page was found. Retrying…',
+            true, {targetId: recovery.newTargetId});
+        } else {
+          this.fail(run, 'The browser page crashed unexpectedly and the task ' +
+            'could not continue. Please try again.');
+        }
+      } else {
+        this.fail(run, error.message || String(error));
+      }
     } finally {
+      if (!run.browserPageCrashed && !resumeAfterCrash) {
+        await this.connection.cleanup?.(run.targetId).catch(error => {
+          console.warn(`AgentSearch overlay cleanup failed: ${
+            error.message || error}`);
+        });
+      }
       run.loopActive = false;
     }
+    if (resumeAfterCrash) void this.loop(run);
   }
 
   confirm(runId, confirmationId, approved) {
@@ -182,10 +385,6 @@ class TaskManager {
     const pending = run?.pendingConfirmation;
     if (!run || run.cancelled || run.status !== 'awaiting_confirmation' ||
         !pending || pending.consumed || pending.confirmationId !== confirmationId) {
-      return false;
-    }
-    if (Date.now() >= pending.expiresAt) {
-      this.fail(run, 'Confirmation expired. The action was not performed.');
       return false;
     }
     pending.consumed = true;
@@ -203,6 +402,7 @@ class TaskManager {
     }
     run.purchaseAuthorization = {approved: true, confirmationId,
       toolCallId: pending.toolCallId};
+    run.deadline = Date.now() + pending.remainingTaskMs;
     run.status = 'running';
     setImmediate(() => void this.loop(run));
     return true;
@@ -222,4 +422,4 @@ class TaskManager {
   }
 }
 
-module.exports = {TaskManager, validateAction};
+module.exports = {isUngroundedProductRefusal, TaskManager, validateAction};

@@ -119,24 +119,26 @@ test('confirmation endpoints reject wrong, reused, and cancelled approvals', asy
   });
 });
 
-test('expired confirmation fails closed through the HTTP API', async () => {
-  const instance = createServer({managerOptions: {confirmationTimeoutMs: 1}});
+test('confirmation remains actionable after an arbitrary clock jump', async () => {
+  const instance = createServer();
   await new Promise(resolve => instance.server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${instance.server.address().port}`;
+  const realNow = Date.now;
   try {
-    const created = await createTask(baseUrl, '[mock:confirmation] expires');
+    const created = await createTask(baseUrl, '[mock:confirmation] waits');
     const pending = await waitForStatus(baseUrl, created.runId,
       'awaiting_confirmation');
     const confirmationId = pending.events.find(event =>
       event.type === 'confirmation_required').confirmationId;
-    await delay(5);
+    Date.now = () => realNow() + (7 * 24 * 60 * 60 * 1000);
     const response = await fetch(
       `${baseUrl}/v1/tasks/${created.runId}/confirmation`, {method: 'POST',
-        body: JSON.stringify({confirmationId, approved: true})});
-    assert.equal(response.status, 409);
-    const failed = await waitForStatus(baseUrl, created.runId, 'error');
-    assert.match(failed.events.at(-1).text, /expired/i);
+        body: JSON.stringify({confirmationId, approved: false})});
+    assert.equal(response.status, 200);
+    const denied = await waitForStatus(baseUrl, created.runId, 'denied');
+    assert.equal(denied.status, 'denied');
   } finally {
+    Date.now = realNow;
     await new Promise(resolve => instance.server.close(resolve));
   }
 });

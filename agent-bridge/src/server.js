@@ -75,7 +75,7 @@ function createServer(options = {}) {
         }
         return manager.confirm(run.id, input.confirmationId, input.approved) ?
           json(res, 200, {ok: true}) :
-          json(res, 409, {error: 'confirmation is stale, expired, or invalid'});
+          json(res, 409, {error: 'confirmation is stale or invalid'});
       }
       if (req.method === 'POST' && match[2] === 'cancel') {
         return manager.cancel(run.id) ? json(res, 200, {ok: true}) :

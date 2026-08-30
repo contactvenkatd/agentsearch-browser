@@ -3,6 +3,8 @@
 module.exports = `
 (() => {
   document.querySelectorAll('.agent-label-overlay').forEach(el => el.remove());
+  document.querySelectorAll('[data-agent-id]').forEach(el =>
+    el.removeAttribute('data-agent-id'));
   const selector = [
     'a[href]', 'button', 'input', 'select', 'textarea',
     '[role="button"]', '[role="link"]', '[role="textbox"]',
@@ -10,6 +12,7 @@ module.exports = `
   ].join(',');
   const map = [];
   let index = 0;
+  let organicResultRank = 0;
   for (const el of document.querySelectorAll(selector)) {
     const fieldDescriptor = [el.getAttribute('type'), el.getAttribute('name'),
       el.getAttribute('id'), el.getAttribute('autocomplete'),
@@ -25,20 +28,30 @@ module.exports = `
     if (!visible) continue;
     const id = index++;
     el.setAttribute('data-agent-id', String(id));
-    const label = document.createElement('div');
-    label.className = 'agent-label-overlay';
-    label.textContent = String(id);
-    label.style.cssText = 'position:fixed;top:' + Math.max(0, rect.top) +
-      'px;left:' + Math.max(0, rect.left) +
-      'px;background:#ff3366;color:white;font:11px monospace;padding:1px 4px;' +
-      'border-radius:3px;z-index:2147483647;pointer-events:none;line-height:1.4';
-    document.documentElement.appendChild(label);
     const text = (el.innerText || '').trim().slice(0, 60) ||
       el.getAttribute('placeholder') || el.getAttribute('aria-label') ||
       el.getAttribute('alt') || '';
+    let resultRank = null;
+    if (el.matches('a[href]') &&
+        el.closest('#search, #b_results, main, [data-testid="mainline"]')) {
+      try {
+        const destination = new URL(el.href, location.href);
+        const searchHost = location.hostname.replace(/^www\./, '');
+        const destinationHost = destination.hostname.replace(/^www\./, '');
+        if (destination.protocol.startsWith('http') &&
+            destinationHost !== searchHost &&
+            !/^(?:google|bing|duckduckgo|yahoo)\./.test(destinationHost)) {
+          resultRank = ++organicResultRank;
+        }
+      } catch {}
+    }
     map.push({id, tag: el.tagName.toLowerCase(),
       type: el.getAttribute('type') || '', text,
-      role: el.getAttribute('role') || ''});
+      role: el.getAttribute('role') || '',
+      organicResultRank: resultRank,
+      navigationLikely: Boolean(el.closest('a[href], form')) ||
+        ['submit', 'image'].includes(el.getAttribute('type')) ||
+        el.getAttribute('role') === 'link'});
   }
   return map;
 })()
