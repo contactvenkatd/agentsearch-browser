@@ -1,0 +1,5 @@
+{
+  "google_oauth_client_id": "YOUR_GOOGLE_OAUTH_CLIENT_ID",
+  "google_oauth_client_secret": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET",
+  "xai_api_key": "xai-YOUR_KEY_HERE"
+}

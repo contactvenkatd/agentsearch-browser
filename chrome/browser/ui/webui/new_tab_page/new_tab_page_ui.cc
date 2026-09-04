@@ -136,6 +136,7 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "google_apis/gaia/core_account_id.h"
 #include "google_apis/gaia/gaia_urls.h"
+#include "google_apis/google_api_keys.h"
 #include "media/base/media_switches.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "net/base/net_errors.h"
@@ -230,10 +231,6 @@ constexpr char kAgentSearchSearchHistoryPref[] =
 constexpr char kAgentSearchOAuthRedirectUri[] = "http://localhost";
 constexpr char kAgentSearchOAuthAuthorizeUrl[] =
     "https://accounts.google.com/o/oauth2/v2/auth";
-constexpr char kAgentSearchOAuthClientId[] =
-    "1027369099711-70bi04qldh4vu0chavnjpvtj635g2mu5.apps.googleusercontent.com";
-constexpr char kAgentSearchOAuthClientSecret[] =
-    "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";
 constexpr size_t kAgentSearchMaxResponseBytes = 4 * 1024 * 1024;
 constexpr size_t kAgentSearchWeatherMaxResponseBytes = 256 * 1024;
 constexpr size_t kAgentSearchOAuthMaxResponseBytes = 1024 * 1024;
@@ -367,7 +364,8 @@ class AgentSearchMessageHandler : public content::WebUIMessageHandler {
     oauth_state_ = base::UnguessableToken::Create().ToString();
     GURL authorize_url(kAgentSearchOAuthAuthorizeUrl);
     authorize_url = net::AppendQueryParameter(
-        authorize_url, "client_id", kAgentSearchOAuthClientId);
+        authorize_url, "client_id",
+        google_apis::GetOAuth2ClientID(google_apis::CLIENT_MAIN));
     authorize_url = net::AppendQueryParameter(authorize_url, "redirect_uri",
                                                kAgentSearchOAuthRedirectUri);
     authorize_url = net::AppendQueryParameter(authorize_url, "response_type",
@@ -433,9 +431,12 @@ class AgentSearchMessageHandler : public content::WebUIMessageHandler {
     std::string body = base::StrCat(
         {"code=", base::EscapeUrlEncodedData(code, true),
          "&client_id=",
-         base::EscapeUrlEncodedData(kAgentSearchOAuthClientId, true),
+         base::EscapeUrlEncodedData(
+             google_apis::GetOAuth2ClientID(google_apis::CLIENT_MAIN), true),
          "&client_secret=",
-         base::EscapeUrlEncodedData(kAgentSearchOAuthClientSecret, true),
+         base::EscapeUrlEncodedData(
+             google_apis::GetOAuth2ClientSecret(google_apis::CLIENT_MAIN),
+             true),
          "&redirect_uri=",
          base::EscapeUrlEncodedData(kAgentSearchOAuthRedirectUri, true),
          "&grant_type=authorization_code"});

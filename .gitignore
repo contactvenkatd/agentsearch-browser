@@ -351,3 +351,11 @@ third_party/rust/target/
 
 # Trace files created when using --trace-startup.
 **/chrometrace.log
+
+# AgentSearch local credentials.
+config.local.json
+.env
+.env.*
+*client_secret*.json
+agentsearch-xai-key.txt
+out/
