@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config();
+
 const http = require('node:http');
 const {ChromiumConnection, MockChromiumConnection} = require('./chromium');
 const {TaskManager} = require('./task-manager');

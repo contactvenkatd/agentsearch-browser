@@ -62,10 +62,22 @@ const TOOL = [{type: 'function', function: {
 }}];
 
 function apiKey() {
-  if (process.env.XAI_API_KEY) return process.env.XAI_API_KEY.trim();
+  if (process.env.XAI_API_KEY?.trim()) return process.env.XAI_API_KEY.trim();
   const filename = process.env.AGENTSEARCH_XAI_KEY_FILE ||
     path.join(os.homedir(), 'agentsearch-xai-key.txt');
-  try { return fs.readFileSync(filename, 'utf8').trim(); } catch { return ''; }
+  try {
+    const key = fs.readFileSync(filename, 'utf8').trim();
+    if (key) {
+      console.warn(`XAI_API_KEY is not set; using fallback key file: ${filename}`);
+      return key;
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn(`Unable to read xAI fallback key file ${filename}: ${error.message}`);
+    }
+  }
+  throw new Error(
+    'xAI API key not found; set XAI_API_KEY or provide ~/agentsearch-xai-key.txt');
 }
 
 function formatElements(elements) {
@@ -204,7 +216,6 @@ async function decide(run, observation) {
       summary: 'Completed the requested mock task.', toolCallId: 'mock-done'};
   }
   const key = apiKey();
-  if (!key) throw new Error('xAI API key not found in XAI_API_KEY or ~/agentsearch-xai-key.txt');
   const prompt = buildPrompt(run, observation);
   const messages = buildApiMessages(run, prompt);
   try {
