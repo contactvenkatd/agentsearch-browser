@@ -559,10 +559,10 @@ index a19a0cf63f..1ee7615c54 100644
      "//third_party/blink/public/common",
 diff --git a/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.cc b/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.cc
 new file mode 100644
-index 0000000000..c854b4b749
+index 0000000000..b57636eb03
 --- /dev/null
 +++ b/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.cc
-@@ -0,0 +1,732 @@
+@@ -0,0 +1,735 @@
 +// Copyright 2026 The AgentSearch Authors
 +
 +#include "chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.h"
@@ -1071,7 +1071,10 @@ index 0000000000..c854b4b749
 +    } else if (*status != "awaiting_confirmation") {
 +      RemoveWorkingIndicator();
 +      if (*status == "done" && !run_has_assistant_message_) {
-+        AppendMessage(u"Done", false, true);
++        AppendMessage(
++            u"Task did not complete as requested: no completion summary was "
++            u"provided.",
++            false, true);
 +      } else if (terminal_message) {
 +        AppendMessage(*terminal_message, false, true);
 +      } else if (*status == "denied") {
