@@ -506,7 +506,10 @@ class AgentSearchSidePanelView : public views::View,
     } else if (*status != "awaiting_confirmation") {
       RemoveWorkingIndicator();
       if (*status == "done" && !run_has_assistant_message_) {
-        AppendMessage(u"Done", false, true);
+        AppendMessage(
+            u"Task did not complete as requested: no completion summary was "
+            u"provided.",
+            false, true);
       } else if (terminal_message) {
         AppendMessage(*terminal_message, false, true);
       } else if (*status == "denied") {
