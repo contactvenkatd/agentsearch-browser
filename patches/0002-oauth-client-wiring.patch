@@ -1,0 +1,637 @@
+From 0000000000000000000000000000000000000002 Mon Sep 17 00:00:00 2001
+From: contactvenkatd <contactvenkatd@gmail.com>
+Date: Tue, 9 Sep 2026 10:00:00 -0700
+Subject: [PATCH 2/5] OAuth client wiring and credential integration
+
+Wires Google OAuth sign-in, gates the first-run intro flow, and adapts
+the password manager / autofill paths for external credential providers.
+Requires a locally registered GCP OAuth client (see docs/BUILDING.md).
+
+---
+diff --git a/chrome/browser/extensions/external_provider_impl.cc b/chrome/browser/extensions/external_provider_impl.cc
+index c095d467fd..1fa1887756 100644
+--- a/chrome/browser/extensions/external_provider_impl.cc
++++ b/chrome/browser/extensions/external_provider_impl.cc
+@@ -100,6 +100,28 @@ namespace {
+ using ::base::i18n::LanguageTag;
+ using ::base::i18n::LanguageTagConverter;
+ 
++constexpr char kAgentSearchBitwardenExtensionId[] =
++    "nngceckbapebfimnlniiiahkandclblb";
++constexpr char kChromeWebStoreUpdateUrl[] =
++    "https://clients2.google.com/service/update2/crx";
++
++class AgentSearchBitwardenExternalLoader : public ExternalLoader {
++ public:
++  AgentSearchBitwardenExternalLoader() = default;
++
++  void StartLoading() override {
++    base::DictValue prefs;
++    prefs.SetByDottedPath(
++        std::string(kAgentSearchBitwardenExtensionId) +
++            ".external_update_url",
++        kChromeWebStoreUpdateUrl);
++    LoadFinished(std::move(prefs));
++  }
++
++ private:
++  ~AgentSearchBitwardenExternalLoader() override = default;
++};
++
+ #if BUILDFLAG(IS_CHROMEOS)
+ 
+ const char kCameraAppId[] = "hfhhnacclhffhdffklopdkcgdhifgngh";
+@@ -751,6 +773,17 @@ void ExternalProviderImpl::CreateExternalProviders(
+   policy_provider->set_allow_updates(true);
+   provider_list->push_back(std::move(policy_provider));
+ 
++  if (profile->IsRegularProfile()) {
++    auto bitwarden_provider = std::make_unique<ExternalProviderImpl>(
++        service, base::MakeRefCounted<AgentSearchBitwardenExternalLoader>(),
++        profile, ManifestLocation::kExternalPolicyDownload,
++        ManifestLocation::kExternalPolicyDownload, Extension::FROM_WEBSTORE);
++    bitwarden_provider->set_auto_acknowledge(true);
++    bitwarden_provider->set_install_immediately(true);
++    bitwarden_provider->set_allow_updates(true);
++    provider_list->push_back(std::move(bitwarden_provider));
++  }
++
+   // Load the KioskAppExternalProvider when running in the Chrome App kiosk
+   // mode.
+   if (IsRunningInForcedAppMode()) {
+diff --git a/chrome/browser/extensions/standard_management_policy_provider.cc b/chrome/browser/extensions/standard_management_policy_provider.cc
+index 3d166dd793..c8a6732752 100644
+--- a/chrome/browser/extensions/standard_management_policy_provider.cc
++++ b/chrome/browser/extensions/standard_management_policy_provider.cc
+@@ -25,6 +25,9 @@ namespace extensions {
+ 
+ namespace {
+ 
++constexpr char kAgentSearchBitwardenExtensionId[] =
++    "nngceckbapebfimnlniiiahkandclblb";
++
+ bool AdminPolicyIsModifiable(ExtensionManagement* settings,
+                              const Extension* source_extension,
+                              const Extension* extension,
+@@ -258,6 +261,14 @@ bool StandardManagementPolicyProvider::MustRemainDisabled(
+ bool StandardManagementPolicyProvider::MustRemainInstalled(
+     const Extension* extension,
+     std::u16string* error) const {
++  if (extension->id() == kAgentSearchBitwardenExtensionId) {
++    if (error) {
++      *error = l10n_util::GetStringFUTF16(
++          IDS_EXTENSION_CANT_UNINSTALL_POLICY_REQUIRED,
++          base::UTF8ToUTF16(extension->name()));
++    }
++    return true;
++  }
+   ManagedInstallationMode mode = settings_->GetInstallationMode(extension);
+   // Disallow removing of recommended extension, to avoid re-install it
+   // again while policy is reload. But disabling of recommended extension is
+diff --git a/chrome/browser/first_run/BUILD.gn b/chrome/browser/first_run/BUILD.gn
+index 37b4603632..122863f485 100644
+--- a/chrome/browser/first_run/BUILD.gn
++++ b/chrome/browser/first_run/BUILD.gn
+@@ -46,6 +46,7 @@ source_set("impl") {
+   ]
+ 
+   deps = [
++    "//build:branding_buildflags",
+     "//chrome/browser/bookmarks",
+     "//chrome/browser/favicon",
+     "//chrome/browser/google",
+diff --git a/chrome/browser/first_run/first_run.cc b/chrome/browser/first_run/first_run.cc
+index 4e2948a977..5d6c0143e7 100644
+--- a/chrome/browser/first_run/first_run.cc
++++ b/chrome/browser/first_run/first_run.cc
+@@ -20,6 +20,7 @@
+ #include "base/run_loop.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/time/time.h"
++#include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/first_run/first_run_features.h"
+@@ -254,10 +255,12 @@ base::Time ReadFirstRunSentinelCreationTime() {
+ }
+ 
+ // Returns true if the sentinel file exists (or the path cannot be obtained).
++#if !BUILDFLAG(AGENTSEARCH_BRANDING)
+ bool IsFirstRunSentinelPresent() {
+   base::FilePath sentinel;
+   return !GetFirstRunSentinelFilePath(&sentinel) || base::PathExists(sentinel);
+ }
++#endif
+ 
+ }  // namespace
+ 
+@@ -350,6 +353,12 @@ void RegisterProfilePrefs(
+ }
+ 
+ bool IsChromeFirstRun() {
++#if BUILDFLAG(AGENTSEARCH_BRANDING)
++  // AgentSearch opens directly to its dashboard on every new profile. Its
++  // first-run and sign-in promotion flows are permanently disabled at build
++  // time and do not depend on --no-first-run being supplied by the launcher.
++  return false;
++#else
+   if (g_first_run == internal::FIRST_RUN_UNKNOWN) {
+     const base::CommandLine* command_line =
+         base::CommandLine::ForCurrentProcess();
+@@ -359,11 +368,16 @@ bool IsChromeFirstRun() {
+         command_line->HasSwitch(switches::kNoFirstRun));
+   }
+   return g_first_run == internal::FIRST_RUN_TRUE;
++#endif
+ }
+ 
+ #if BUILDFLAG(IS_MAC)
+ bool IsFirstRunSuppressed(const base::CommandLine& command_line) {
++#if BUILDFLAG(AGENTSEARCH_BRANDING)
++  return true;
++#else
+   return command_line.HasSwitch(switches::kNoFirstRun);
++#endif
+ }
+ #endif
+ 
+diff --git a/chrome/browser/password_manager/chrome_password_manager_client.cc b/chrome/browser/password_manager/chrome_password_manager_client.cc
+index 1df9f1f8a0..badfe49574 100644
+--- a/chrome/browser/password_manager/chrome_password_manager_client.cc
++++ b/chrome/browser/password_manager/chrome_password_manager_client.cc
+@@ -273,57 +273,17 @@ void ChromePasswordManagerClient::BindPasswordGenerationDriver(
+ ChromePasswordManagerClient::~ChromePasswordManagerClient() = default;
+ 
+ bool ChromePasswordManagerClient::IsSavingAndFillingEnabled(
+-    const url::Origin& origin,
+-    base::optional_ref<const GURL> url) const {
+-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+-          switches::kEnableAutomation)) {
+-    // Disable the password saving UI for automated tests. It obscures the
+-    // page, and there is no API to access (or dismiss) UI bubbles/infobars.
+-    return false;
+-  }
+-  password_manager::PasswordManagerSettingsService* settings_service =
+-      PasswordManagerSettingsServiceFactory::GetForProfile(GetProfile());
+-  return settings_service &&
+-         settings_service->IsSettingEnabled(
+-             PasswordManagerSetting::kOfferToSavePasswords) &&
+-         !IsOffTheRecord() && IsFillingEnabled(origin, url);
++    const url::Origin&,
++    base::optional_ref<const GURL>) const {
++  // AgentSearch delegates password saving and filling exclusively to the
++  // bundled Bitwarden extension.
++  return false;
+ }
+ 
+ bool ChromePasswordManagerClient::IsFillingEnabled(
+-    const url::Origin& origin,
+-    base::optional_ref<const GURL> url) const {
+-  if (origin.opaque() &&
+-      base::FeatureList::IsEnabled(
+-          password_manager::features::kPasswordBlockOpaqueOrigins)) {
+-    return false;
+-  }
+-
+-  const Profile* profile =
+-      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+-  // Guest profiles don't have PasswordStore at all, so filling should be
+-  // disabled for them.
+-  if (!profile || profile->IsGuestSession()) {
+-    return false;
+-  }
+-
+-  // Filling is impossible if password store in unavailable.
+-  if (!GetProfilePasswordStore()) {
+-    return false;
+-  }
+-
+-  const bool ssl_errors = net::IsCertStatusError(GetMainFrameCertStatus());
+-  autofill::LogManager* log_manager = GetOrCreateLogManager();
+-  if (log_manager && log_manager->IsLoggingActive()) {
+-    password_manager::BrowserSavePasswordProgressLogger logger(log_manager);
+-    logger.LogBoolean(Logger::STRING_SSL_ERRORS_PRESENT, ssl_errors);
+-  }
+-
+-  if (url && !base::FeatureList::IsEnabled(
+-                 password_manager::features::kPasswordBlockOpaqueOrigins)) {
+-    return !ssl_errors && IsPasswordManagementEnabledForCurrentPage(*url);
+-  }
+-  return !ssl_errors &&
+-         IsPasswordManagementEnabledForCurrentPage(origin.GetURL());
++    const url::Origin&,
++    base::optional_ref<const GURL>) const {
++  return false;
+ }
+ 
+ bool ChromePasswordManagerClient::IsFieldFilledWithOtp(
+diff --git a/chrome/browser/password_manager/factories/account_password_store_factory.cc b/chrome/browser/password_manager/factories/account_password_store_factory.cc
+index c852ab0b47..8cff29d373 100644
+--- a/chrome/browser/password_manager/factories/account_password_store_factory.cc
++++ b/chrome/browser/password_manager/factories/account_password_store_factory.cc
+@@ -73,7 +73,7 @@ void MaybeClearStatsTableForSyncToSigninMigration(
+ }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+-scoped_refptr<RefcountedKeyedService> BuildPasswordStore(
++[[maybe_unused]] scoped_refptr<RefcountedKeyedService> BuildPasswordStore(
+     content::BrowserContext* context) {
+   Profile* profile = Profile::FromBrowserContext(context);
+   DCHECK(!profile->IsOffTheRecord());
+@@ -120,9 +120,13 @@ AccountPasswordStoreFactory::GetForProfile(Profile* profile,
+       profile->IsOffTheRecord()) {
+     return nullptr;
+   }
++  scoped_refptr<RefcountedKeyedService> service =
++      GetInstance()->GetServiceForBrowserContext(profile, true);
++  if (!service) {
++    return nullptr;
++  }
+   return base::WrapRefCounted(
+-      static_cast<password_manager::PasswordStoreInterface*>(
+-          GetInstance()->GetServiceForBrowserContext(profile, true).get()));
++      static_cast<password_manager::PasswordStoreInterface*>(service.get()));
+ }
+ 
+ // static
+@@ -158,7 +162,8 @@ AccountPasswordStoreFactory::GetDefaultFactoryForTesting() {
+ scoped_refptr<RefcountedKeyedService>
+ AccountPasswordStoreFactory::BuildServiceInstanceFor(
+     content::BrowserContext* context) const {
+-  return BuildPasswordStore(context);
++  (void)context;
++  return nullptr;
+ }
+ 
+ bool AccountPasswordStoreFactory::ServiceIsNULLWhileTesting() const {
+diff --git a/chrome/browser/password_manager/factories/profile_password_store_factory.cc b/chrome/browser/password_manager/factories/profile_password_store_factory.cc
+index d6fbd3835b..58eb6623ae 100644
+--- a/chrome/browser/password_manager/factories/profile_password_store_factory.cc
++++ b/chrome/browser/password_manager/factories/profile_password_store_factory.cc
+@@ -41,7 +41,7 @@ network::mojom::NetworkContext* GetNetworkContext(Profile* profile) {
+              : nullptr;
+ }
+ 
+-scoped_refptr<RefcountedKeyedService> BuildPasswordStore(
++[[maybe_unused]] scoped_refptr<RefcountedKeyedService> BuildPasswordStore(
+     content::BrowserContext* context) {
+   Profile* profile = Profile::FromBrowserContext(context);
+   DCHECK(!profile->IsOffTheRecord());
+@@ -88,8 +88,13 @@ ProfilePasswordStoreFactory::GetForProfile(Profile* profile,
+       profile->IsOffTheRecord()) {
+     return nullptr;
+   }
+-  return base::WrapRefCounted(static_cast<PasswordStoreInterface*>(
+-      GetInstance()->GetServiceForBrowserContext(profile, true).get()));
++  scoped_refptr<RefcountedKeyedService> service =
++      GetInstance()->GetServiceForBrowserContext(profile, true);
++  if (!service) {
++    return nullptr;
++  }
++  return base::WrapRefCounted(
++      static_cast<PasswordStoreInterface*>(service.get()));
+ }
+ 
+ // static
+@@ -125,7 +130,8 @@ ProfilePasswordStoreFactory::GetDefaultFactoryForTesting() {
+ scoped_refptr<RefcountedKeyedService>
+ ProfilePasswordStoreFactory::BuildServiceInstanceFor(
+     content::BrowserContext* context) const {
+-  return BuildPasswordStore(context);
++  (void)context;
++  return nullptr;
+ }
+ 
+ bool ProfilePasswordStoreFactory::ServiceIsNULLWhileTesting() const {
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index 295aa9cc86..59d0e1606f 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -13,6 +13,7 @@
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
+ #include "base/json/values_util.h"
++#include "base/logging.h"
+ #include "base/time/time.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/android_buildflags.h"
+@@ -162,6 +163,7 @@
+ #include "components/optimization_guide/core/optimization_guide_prefs.h"
+ #include "components/page_info/core/merchant_trust_service.h"
+ #include "components/password_manager/core/browser/password_manager.h"
++#include "components/password_manager/core/common/password_manager_pref_names.h"
+ #include "components/payments/core/payment_prefs.h"
+ #include "components/performance_manager/public/user_tuning/prefs.h"
+ #include "components/permissions/permission_hats_trigger_helper.h"
+@@ -1611,6 +1613,11 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   accessibility_annotator::prefs::RegisterProfilePrefs(registry);
+   AimEligibilityService::RegisterProfilePrefs(registry);
+   AnnouncementNotificationService::RegisterProfilePrefs(registry);
++  registry->RegisterListPref("agentsearch.chat_history");
++  registry->RegisterBooleanPref("agentsearch.native_password_data_deleted",
++                                false);
++  registry->RegisterDictionaryPref("agentsearch.oauth_profile");
++  registry->RegisterListPref("agentsearch.search_history");
+   autofill::prefs::RegisterProfilePrefs(registry);
+   browsing_data::prefs::RegisterBrowserUserPrefs(registry);
+   capture_policy::RegisterProfilePrefs(registry);
+@@ -2325,6 +2332,42 @@ void MigrateObsoleteProfilePrefs(PrefService* profile_prefs,
+   // BEGIN_MIGRATE_OBSOLETE_PROFILE_PREFS
+   // Please don't delete the preceding line. It is used by PRESUBMIT.py.
+ 
++  profile_prefs->SetBoolean(
++      password_manager::prefs::kCredentialsEnableService, false);
++  profile_prefs->SetBoolean(
++      password_manager::prefs::kCredentialsEnableAutosignin, false);
++  profile_prefs->SetBoolean(
++      password_manager::prefs::kCredentialsEnablePasskeys, false);
++
++#if !BUILDFLAG(IS_ANDROID)
++  if (!profile_prefs->GetBoolean(
++          "agentsearch.native_password_data_deleted")) {
++    constexpr base::FilePath::CharType kNativePasswordFiles[][40] = {
++        FILE_PATH_LITERAL("Login Data"),
++        FILE_PATH_LITERAL("Login Data-journal"),
++        FILE_PATH_LITERAL("Login Data-wal"),
++        FILE_PATH_LITERAL("Login Data-shm"),
++        FILE_PATH_LITERAL("Login Data For Account"),
++        FILE_PATH_LITERAL("Login Data For Account-journal"),
++        FILE_PATH_LITERAL("Login Data For Account-wal"),
++        FILE_PATH_LITERAL("Login Data For Account-shm"),
++    };
++    bool deleted_all = true;
++    for (const auto& filename : kNativePasswordFiles) {
++      const base::FilePath path = profile_path.Append(filename);
++      if (base::PathExists(path) && !base::DeleteFile(path)) {
++        deleted_all = false;
++        LOG(ERROR) << "AgentSearch could not delete native password data: "
++                   << path;
++      }
++    }
++    if (deleted_all) {
++      profile_prefs->SetBoolean(
++          "agentsearch.native_password_data_deleted", true);
++    }
++  }
++#endif
++
+ #if !BUILDFLAG(IS_ANDROID)
+   // Added 08/2024, but DO NOT REMOVE after the usual year.
+   // TODO(crbug.com/356148174): Remove once kMoveThemePrefsToSpecifics has been
+diff --git a/chrome/browser/profiles/profile_impl.cc b/chrome/browser/profiles/profile_impl.cc
+index f3ca43e49d..6bfe59f13c 100644
+--- a/chrome/browser/profiles/profile_impl.cc
++++ b/chrome/browser/profiles/profile_impl.cc
+@@ -1144,7 +1144,13 @@ void ProfileImpl::OnLocaleReady(CreateMode create_mode) {
+   TRACE_EVENT0("browser", "ProfileImpl::OnLocaleReady");
+ 
+   // Migrate obsolete prefs.
+-  MigrateObsoleteProfilePrefs(GetPrefs(), GetPath());
++  // AgentSearch's migration removes obsolete native password database files.
++  // PathExists() and DeleteFile() are blocking operations, but locale readiness
++  // can complete after startup has disallowed blocking on the UI thread.
++  {
++    ScopedAllowBlockingForProfile allow_blocking;
++    MigrateObsoleteProfilePrefs(GetPrefs(), GetPath());
++  }
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   // Note: Extension preferences can be keyed off the extension ID, so need to
+   // be handled specially (rather than directly as part of
+@@ -1705,12 +1711,16 @@ GURL ProfileImpl::GetHomePage() {
+       return home_page;
+   }
+ 
+-  if (GetPrefs()->GetBoolean(prefs::kHomePageIsNewTabPage))
+-    return chrome::ChromeUINewTabURLAsGURL();
++  if (GetPrefs()->GetBoolean(prefs::kHomePageIsNewTabPage)) {
++    return IsOffTheRecord() ? chrome::ChromeUINewTabURLAsGURL()
++                            : chrome::ChromeUINewTabPageURLAsGURL();
++  }
+   GURL home_page(
+       url_formatter::FixupURL(GetPrefs()->GetString(prefs::kHomePage)));
+-  if (!home_page.is_valid())
+-    return chrome::ChromeUINewTabURLAsGURL();
++  if (!home_page.is_valid()) {
++    return IsOffTheRecord() ? chrome::ChromeUINewTabURLAsGURL()
++                            : chrome::ChromeUINewTabPageURLAsGURL();
++  }
+   return home_page;
+ }
+ 
+diff --git a/chrome/browser/ui/autofill/chrome_autofill_client.cc b/chrome/browser/ui/autofill/chrome_autofill_client.cc
+index d4788b1619..446a2d8715 100644
+--- a/chrome/browser/ui/autofill/chrome_autofill_client.cc
++++ b/chrome/browser/ui/autofill/chrome_autofill_client.cc
+@@ -1106,11 +1106,9 @@ bool ChromeAutofillClient::IsWalletPublicPassStorageEnabled() const {
+ }
+ 
+ bool ChromeAutofillClient::IsPasswordManagerEnabled() const {
+-  password_manager::PasswordManagerSettingsService* settings_service =
+-      PasswordManagerSettingsServiceFactory::GetForProfile(GetProfile());
+-  return settings_service &&
+-         settings_service->IsSettingEnabled(
+-             password_manager::PasswordManagerSetting::kOfferToSavePasswords);
++  // Address and payment autofill remain enabled. AgentSearch uses Bitwarden
++  // exclusively for passwords.
++  return false;
+ }
+ 
+ bool ChromeAutofillClient::UsesPlatformAutofill() const {
+diff --git a/chrome/browser/ui/startup/first_run_service.cc b/chrome/browser/ui/startup/first_run_service.cc
+index 03ffc9d3e3..0c04c1d02a 100644
+--- a/chrome/browser/ui/startup/first_run_service.cc
++++ b/chrome/browser/ui/startup/first_run_service.cc
+@@ -12,6 +12,7 @@
+ #include "base/functional/bind.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/no_destructor.h"
++#include "build/branding_buildflags.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/first_run/first_run.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -49,6 +50,13 @@ bool IsFirstRunEligibleProfile(Profile* profile) {
+ }
+ 
+ bool IsFirstRunEligibleProcess() {
++#if BUILDFLAG(AGENTSEARCH_BRANDING)
++  // AgentSearch does not offer Chrome/Chromium account sign-in. Block the
++  // desktop FirstRunService itself so it can never open the profile picker's
++  // chrome://intro sign-in screen, independently of sentinel or command-line
++  // first-run state.
++  return false;
++#else
+   if (!first_run::IsChromeFirstRun()) {
+     return false;
+   }
+@@ -59,6 +67,7 @@ bool IsFirstRunEligibleProcess() {
+   // affected tests to handle correctly the FRE opening instead of a tab.
+   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
+       switches::kNoFirstRun);
++#endif
+ }
+ 
+ enum class PolicyEffect {
+diff --git a/chrome/browser/ui/startup/first_run_service_unittest.cc b/chrome/browser/ui/startup/first_run_service_unittest.cc
+index c6ef7821ba..a5b33031f1 100644
+--- a/chrome/browser/ui/startup/first_run_service_unittest.cc
++++ b/chrome/browser/ui/startup/first_run_service_unittest.cc
+@@ -7,6 +7,7 @@
+ #include "base/files/file_path.h"
+ #include "base/run_loop.h"
+ #include "base/scoped_observation.h"
++#include "build/branding_buildflags.h"
+ #include "base/test/task_environment.h"
+ #include "base/test/test_future.h"
+ #include "chrome/browser/first_run/first_run.h"
+@@ -77,6 +78,11 @@ TEST_F(FirstRunServiceTest, ShouldOpenFirstRun) {
+   ASSERT_TRUE(profile_manager.SetUp());
+ 
+   auto* profile = profile_manager.CreateTestingProfile("Test Profile");
++#if BUILDFLAG(AGENTSEARCH_BRANDING)
++  // AgentSearch must never instantiate the service that owns chrome://intro.
++  EXPECT_FALSE(ShouldOpenFirstRun(profile));
++  return;
++#else
+   EXPECT_TRUE(ShouldOpenFirstRun(profile));
+ 
+   SetIsFirstRun(false);
+@@ -87,6 +93,7 @@ TEST_F(FirstRunServiceTest, ShouldOpenFirstRun) {
+ 
+   g_browser_process->local_state()->SetBoolean(prefs::kFirstRunFinished, true);
+   EXPECT_FALSE(ShouldOpenFirstRun(profile));
++#endif
+ }
+ 
+ // Regression test for crbug.com/40065181.
+diff --git a/chrome/browser/ui/views/profiles/profile_menu_view.cc b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+index d14b2f094f..7465d12a0c 100644
+--- a/chrome/browser/ui/views/profiles/profile_menu_view.cc
++++ b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+@@ -760,78 +760,10 @@ ProfileMenuView::GetIdentitySectionParams(const ProfileAttributesEntry& entry) {
+                          : signin_metrics::AccessPoint::kAvatarBubbleSignIn;
+   switch (signin_util::GetSignedInState(identity_manager)) {
+     case signin_util::SignedInState::kSignedOut:
+-    case signin_util::SignedInState::kWebOnlySignedIn: {
+-      AccountInfo account_info_for_promos =
+-          signin_ui_util::GetSingleAccountForPromos(identity_manager);
+-      if (!CanOfferSignin(&profile(), account_info_for_promos.gaia,
+-                          account_info_for_promos.email,
+-                          /*allow_account_from_other_profile=*/true)
+-               .IsOk()) {
+-        break;
+-      }
+-
+-      access_point =
+-          signin_metrics::AccessPoint::kAvatarBubbleSignInWithSyncPromo;
+-      if (from_avatar_promo_) {
+-        CHECK(promo_info_.type.has_value());
+-        CHECK_EQ(promo_info_.type.value(),
+-                 signin::ProfileMenuAvatarButtonPromoInfo::Type::kSigninPromo);
+-        access_point = access_point =
+-            signin_metrics::AccessPoint::kAvatarPillExpandPromo;
+-      }
+-      signin_metrics::LogSignInOffered(
+-          access_point,
+-          account_info_for_promos.IsEmpty()
+-              ? signin_metrics::PromoAction::
+-                    PROMO_ACTION_NEW_ACCOUNT_NO_EXISTING_ACCOUNT
+-              : signin_metrics::PromoAction::PROMO_ACTION_WITH_DEFAULT);
+-
+-      if (account_info_for_promos.IsEmpty()) {
+-        // Non-personalized signin button.
+-        button_type = ActionableItem::kSigninButton;
+-        params.subtitle = l10n_util::GetStringUTF16(
+-            syncer::IsReplaceSyncPromosWithSignInPromosEnabled()
+-                ? IDS_PROFILE_MENU_SIGNIN_PROMO_DESCRIPTION_WITH_BOOKMARKS
+-                : IDS_PROFILE_MENU_SIGNIN_PROMO_DESCRIPTION);
+-        params.button_text =
+-            l10n_util::GetStringUTF16(IDS_PROFILE_MENU_SIGNIN_PROMO_BUTTON);
+-        break;
+-      }
+-      // "Continue as" signin button.
+-      account_info_for_signin_action = account_info_for_promos;
+-      params.subtitle = l10n_util::GetStringFUTF16(
+-          syncer::IsReplaceSyncPromosWithSignInPromosEnabled()
+-              ? IDS_SETTINGS_PEOPLE_ACCOUNT_AWARE_SIGNIN_ACCOUNT_ROW_SUBTITLE_WITH_EMAIL_WITH_BOOKMARKS
+-              : IDS_SETTINGS_PEOPLE_ACCOUNT_AWARE_SIGNIN_ACCOUNT_ROW_SUBTITLE_WITH_EMAIL,
+-          base::UTF8ToUTF16(account_info_for_promos.email));
+-      params.button_text = l10n_util::GetStringFUTF16(
+-          IDS_PROFILES_DICE_WEB_ONLY_SIGNIN_BUTTON,
+-          base::UTF8ToUTF16(account_info_for_promos.GetGivenName().value_or(
+-              account_info_for_promos.GetEmail())));
+-      gfx::Image account_image;
+-      if (!account_info_for_promos.GetAvatarImage().has_value()) {
+-        // No account image, use a placeholder.
+-        ProfileAttributesEntry* profile_attributes =
+-            g_browser_process->profile_manager()
+-                ->GetProfileAttributesStorage()
+-                .GetProfileAttributesWithPath(profile().GetPath());
+-        account_image = profile_attributes->GetAvatarIcon(
+-            /*size_for_placeholder_avatar=*/kIdentityImageSizeForButton,
+-            /*use_high_res_file=*/true,
+-            GetPlaceholderAvatarIconParamsVisibleAgainstColor(
+-                BrowserWindow::FromBrowser(&browser())
+-                    ->GetColorProvider()
+-                    ->GetColor(ui::kColorButtonBackgroundProminent)));
+-      } else {
+-        account_image = account_info_for_promos.account_image;
+-      }
+-      params.button_image =
+-          ui::ImageModel::FromImage(profiles::GetSizedAvatarIcon(
+-              account_image,
+-              /*width=*/kIdentityImageSizeForButton,
+-              /*height=*/kIdentityImageSizeForButton, profiles::SHAPE_CIRCLE));
++    case signin_util::SignedInState::kWebOnlySignedIn:
++      // AgentSearch account sign-in is provided by the dashboard's standalone
++      // OAuth flow. Do not expose Chromium's non-functional DICE entry point.
+       break;
+-    }
+     case signin_util::SignedInState::kSignedIn:
+       if (promo_info_.type.has_value()) {
+         switch (promo_info_.type.value()) {
+@@ -1220,14 +1152,12 @@ void ProfileMenuView::MaybeBuildSignoutButton() {
+ 
+ void ProfileMenuView::BuildFeatureButtons() {
+   CHECK(!profile().IsGuestSession());
+-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+-  MaybeBuildCrossDeviceSigninButton();
+-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+   signin::IdentityManager* identity_manager =
+       IdentityManagerFactory::GetForProfile(&profile());
+   // May add the button asynchronously, order is not be guaranteed.
+   MaybeBuildBatchUploadButton();
+-  BuildAutofillSettingsButton();
++  // Passwords are managed exclusively by Bitwarden in AgentSearch. The
++  // native Passwords and Autofill row would lead to a disabled local store.
+   MaybeBuildManageGoogleAccountButton();
+   BuildCustomizeProfileButton();
+   (syncer::IsReplaceSyncPromosWithSignInPromosEnabled() &&
+diff --git a/components/password_manager/core/browser/password_manager.cc b/components/password_manager/core/browser/password_manager.cc
+index 7059c30be8..569ff413b0 100644
+--- a/components/password_manager/core/browser/password_manager.cc
++++ b/components/password_manager/core/browser/password_manager.cc
+@@ -539,10 +539,10 @@ PasswordForm CreateFormForLeakCheck(const PasswordForm& pending_credentials,
+ void PasswordManager::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(
+-      prefs::kCredentialsEnableService, true,
++      prefs::kCredentialsEnableService, false,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+   registry->RegisterBooleanPref(
+-      prefs::kCredentialsEnableAutosignin, true,
++      prefs::kCredentialsEnableAutosignin, false,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+   registry->RegisterBooleanPref(
+       prefs::kWasAutoSignInFirstRunExperienceShown, false,
+@@ -563,7 +563,7 @@ void PasswordManager::RegisterProfilePrefs(
+   registry->RegisterTimePref(prefs::kAccountStoreDateLastUsedForFilling,
+                              base::Time());
+   registry->RegisterBooleanPref(prefs::kWereOldGoogleLoginsRemoved, false);
+-  registry->RegisterBooleanPref(prefs::kCredentialsEnablePasskeys, true);
++  registry->RegisterBooleanPref(prefs::kCredentialsEnablePasskeys, false);
+ 
+ #if BUILDFLAG(IS_APPLE)
+   registry->RegisterIntegerPref(prefs::kKeychainMigrationStatus,
+-- 
+2.54.0
+

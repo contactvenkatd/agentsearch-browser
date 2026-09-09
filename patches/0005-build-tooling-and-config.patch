@@ -1,0 +1,97 @@
+From 0000000000000000000000000000000000000005 Mon Sep 17 00:00:00 2001
+From: contactvenkatd <contactvenkatd@gmail.com>
+Date: Tue, 9 Sep 2026 10:00:00 -0700
+Subject: [PATCH 5/5] Build tooling and local credential config
+
+Adds build.sh, which injects the Google OAuth client id/secret from
+config.local.json into out/Default/args.gn and then runs gn gen and
+autoninja. Adds config.example.json as the template for those local
+credentials, and ignores config.local.json so real secrets are never
+committed.
+
+---
+diff --git a/.gitignore b/.gitignore
+index e9d0297550..73970515cc 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -351,3 +351,11 @@ third_party/rust/target/
+ 
+ # Trace files created when using --trace-startup.
+ **/chrometrace.log
++
++# AgentSearch local credentials.
++config.local.json
++.env
++.env.*
++*client_secret*.json
++agentsearch-xai-key.txt
++out/
+diff --git a/build.sh b/build.sh
+new file mode 100755
+index 0000000000..84762d1751
+--- /dev/null
++++ b/build.sh
+@@ -0,0 +1,49 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++cd "$(dirname "$0")"
++
++config_file="config.local.json"
++args_file="out/Default/args.gn"
++
++if [[ ! -f "$config_file" ]]; then
++  echo "Missing $config_file; copy config.example.json and add local credentials." >&2
++  exit 1
++fi
++
++mkdir -p "$(dirname "$args_file")"
++touch "$args_file"
++
++node - "$config_file" "$args_file" <<'NODE'
++const fs = require('node:fs');
++
++const [configFile, argsFile] = process.argv.slice(2);
++const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
++const clientId = config.google_oauth_client_id?.trim();
++const clientSecret = config.google_oauth_client_secret?.trim();
++
++if (!clientId || !clientSecret) {
++  throw new Error(
++    'config.local.json must define google_oauth_client_id and ' +
++    'google_oauth_client_secret');
++}
++
++let args = fs.readFileSync(argsFile, 'utf8');
++for (const name of [
++  'google_api_key',
++  'google_default_client_id',
++  'google_default_client_secret',
++]) {
++  const assignment = new RegExp(
++    `^${name}\\s*=\\s*(?:\\n\\s*)?"(?:[^"\\\\]|\\\\.)*"\\s*\\n?`, 'gm');
++  args = args.replace(assignment, '');
++}
++
++args = args.replace(/\s*$/, '\n');
++args += `google_default_client_id = ${JSON.stringify(clientId)}\n`;
++args += `google_default_client_secret = ${JSON.stringify(clientSecret)}\n`;
++fs.writeFileSync(argsFile, args, {encoding: 'utf8', mode: 0o600});
++NODE
++
++gn gen out/Default
++autoninja -C out/Default chrome
+diff --git a/config.example.json b/config.example.json
+new file mode 100644
+index 0000000000..f2518acf34
+--- /dev/null
++++ b/config.example.json
+@@ -0,0 +1,5 @@
++{
++  "google_oauth_client_id": "YOUR_GOOGLE_OAUTH_CLIENT_ID",
++  "google_oauth_client_secret": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET",
++  "xai_api_key": "xai-YOUR_KEY_HERE"
++}
+-- 
+2.54.0
+

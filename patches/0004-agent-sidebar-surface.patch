@@ -1,0 +1,1446 @@
+From 0000000000000000000000000000000000000004 Mon Sep 17 00:00:00 2001
+From: contactvenkatd <contactvenkatd@gmail.com>
+Date: Tue, 9 Sep 2026 10:00:00 -0700
+Subject: [PATCH 4/5] Agent sidebar surface and history integration
+
+Adds the Agent Search side panel view, registers its side panel entry,
+action id and toolbar affordances, and extends the history WebUI with
+the agent session surface.
+
+---
+diff --git a/chrome/browser/resources/history/app.css b/chrome/browser/resources/history/app.css
+index d736376221..f0595c9283 100644
+--- a/chrome/browser/resources/history/app.css
++++ b/chrome/browser/resources/history/app.css
+@@ -123,3 +123,46 @@ cr-history-embeddings-filter-chips ~ #tabsContent {
+ cr-history-embeddings {
+   margin-block-end: var(--card-padding-between);
+ }
++
++.agentsearch-history-page {
++  box-sizing: border-box;
++  height: 100%;
++  overflow: auto;
++  padding: 24px 24px 32px;
++}
++
++.agentsearch-history-card {
++  background: var(--cr-card-background-color);
++  border-radius: 12px;
++  box-shadow: var(--cr-card-shadow);
++  margin: 0 auto;
++  max-width: 960px;
++  padding: 20px;
++}
++
++.agentsearch-history-card h2 {
++  color: var(--cr-primary-text-color);
++  font-size: 18px;
++  margin: 0 0 14px;
++}
++
++.agentsearch-history-row {
++  border-top: 1px solid var(--cr-separator-color);
++  padding: 12px 0;
++}
++
++.agentsearch-history-row:first-of-type {
++  border-top: 0;
++}
++
++.agentsearch-history-primary {
++  color: var(--cr-primary-text-color);
++  font-size: 14px;
++}
++
++.agentsearch-history-meta,
++.agentsearch-history-empty {
++  color: var(--cr-secondary-text-color);
++  font-size: 12px;
++  margin-top: 4px;
++}
+diff --git a/chrome/browser/resources/history/app.html.ts b/chrome/browser/resources/history/app.html.ts
+index d2ad156872..e3898a3bf1 100644
+--- a/chrome/browser/resources/history/app.html.ts
++++ b/chrome/browser/resources/history/app.html.ts
+@@ -140,6 +140,50 @@ export function getHtml(this: HistoryAppElement) {
+             </cr-page-selector>
+           </div>
+         </div>
++        <div class="cr-scrollable agentsearch-history-page"
++            path="agentSearchSearches">
++          <section class="agentsearch-history-card">
++            <h2>AgentSearch search history</h2>
++            ${this.agentSearchSearchHistory_.length ?
++                this.agentSearchSearchHistory_.slice().reverse().map(entry => {
++                  console.info(
++                      `AgentSearch search row rendered: ${entry.query}`);
++                  return html`
++                    <div class="agentsearch-history-row">
++                      <div class="agentsearch-history-primary">
++                        ${entry.query}
++                      </div>
++                      <div class="agentsearch-history-meta">
++                        ${entry.category} ·
++                        ${this.agentSearchHistoryDate_(entry.timestamp)}
++                      </div>
++                    </div>`;
++                }) : html`
++                  <div class="agentsearch-history-empty">No history yet.</div>`}
++          </section>
++        </div>
++        <div class="cr-scrollable agentsearch-history-page"
++            path="agentSearchChats">
++          <section class="agentsearch-history-card">
++            <h2>Agent Search chat history</h2>
++            ${this.agentSearchChatHistory_.length ?
++                this.agentSearchChatHistory_.slice().reverse().map(entry => {
++                  console.info(
++                      `AgentSearch chat row rendered: ${entry.role}`);
++                  return html`
++                    <div class="agentsearch-history-row">
++                      <div class="agentsearch-history-primary">
++                        ${entry.role === 'user' ? 'You' : 'Agent Search'}:
++                        ${entry.text}
++                      </div>
++                      <div class="agentsearch-history-meta">
++                        ${this.agentSearchHistoryDate_(entry.timestamp)}
++                      </div>
++                    </div>`;
++                }) : html`
++                  <div class="agentsearch-history-empty">No history yet.</div>`}
++          </section>
++        </div>
+         ${this.syncedTabsSelected_() ? html`
+           <div id="syncedDevicesScroll" class="cr-scrollable" path="syncedTabs">
+             <div class="cr-scrollable-top-shadow"></div>
+diff --git a/chrome/browser/resources/history/app.ts b/chrome/browser/resources/history/app.ts
+index 3bb9d2e8ec..854a7724cf 100644
+--- a/chrome/browser/resources/history/app.ts
++++ b/chrome/browser/resources/history/app.ts
+@@ -57,6 +57,28 @@ import {Page, TABBED_PAGES} from './router.js';
+ import type {HistoryRouterElement} from './router.js';
+ import type {FooterInfo, HistorySideBarElement} from './side_bar.js';
+ 
++export interface AgentSearchSearchEntry {
++  query: string;
++  category: string;
++  timestamp: number;
++}
++
++export interface AgentSearchChatEntry {
++  role: 'user'|'agent';
++  text: string;
++  timestamp: number;
++}
++
++function parseAgentSearchHistory<T>(key: string): T[] {
++  try {
++    const value = JSON.parse(loadTimeData.getString(key));
++    return Array.isArray(value) ? value as T[] : [];
++  } catch (error) {
++    console.error(`AgentSearch history parse failed for ${key}:`, error);
++    return [];
++  }
++}
++
+ // Click/auxclick listeners to intercept any link clicks. If the link points
+ // to a chrome: or file: url, then calls into the browser to do the
+ // navigation.
+@@ -141,6 +163,8 @@ export class HistoryAppElement extends HistoryAppElementBase {
+       shouldShowHistoryCrossDeviceSigninPromo_: {type: Boolean},
+       // </if>
+       contentPage_: {type: String},
++      agentSearchSearchHistory_: {type: Array},
++      agentSearchChatHistory_: {type: Array},
+       tabsContentPage_: {type: String},
+       // The id of the currently selected page.
+       selectedPage_: {type: String},
+@@ -209,6 +233,12 @@ export class HistoryAppElement extends HistoryAppElementBase {
+   protected accessor lastSelectedTab_: number =
+       loadTimeData.getInteger('lastSelectedTab');
+   protected accessor contentPage_: string = Page.HISTORY;
++  protected accessor agentSearchSearchHistory_: AgentSearchSearchEntry[] =
++      parseAgentSearchHistory<AgentSearchSearchEntry>(
++          'agentSearchSearchHistoryJson');
++  protected accessor agentSearchChatHistory_: AgentSearchChatEntry[] =
++      parseAgentSearchHistory<AgentSearchChatEntry>(
++          'agentSearchChatHistoryJson');
+   protected accessor tabsContentPage_: string = Page.HISTORY;
+   protected accessor pendingDelete_: boolean = false;
+   protected accessor queryResult_: QueryResult = {
+@@ -644,6 +674,10 @@ export class HistoryAppElement extends HistoryAppElementBase {
+     return this.selectedPage_ === Page.SYNCED_TABS;
+   }
+ 
++  protected agentSearchHistoryDate_(timestamp: number): string {
++    return new Date(timestamp).toLocaleString();
++  }
++
+   /**
+    * @return Whether a loading spinner should be shown (implies the
+    *     backend is querying a new search term).
+@@ -658,6 +692,12 @@ export class HistoryAppElement extends HistoryAppElementBase {
+       case Page.SYNCED_TABS:
+         this.contentPage_ = Page.SYNCED_TABS;
+         break;
++      case Page.AGENTSEARCH_SEARCHES:
++        this.contentPage_ = Page.AGENTSEARCH_SEARCHES;
++        break;
++      case Page.AGENTSEARCH_CHATS:
++        this.contentPage_ = Page.AGENTSEARCH_CHATS;
++        break;
+       default:
+         this.contentPage_ = Page.HISTORY;
+     }
+diff --git a/chrome/browser/resources/history/router.ts b/chrome/browser/resources/history/router.ts
+index 70901c4c9c..7d332907ef 100644
+--- a/chrome/browser/resources/history/router.ts
++++ b/chrome/browser/resources/history/router.ts
+@@ -15,6 +15,8 @@ export const Page = {
+   HISTORY: 'history',
+   HISTORY_CLUSTERS: 'grouped',
+   SYNCED_TABS: 'syncedTabs',
++  AGENTSEARCH_SEARCHES: 'agentSearchSearches',
++  AGENTSEARCH_CHATS: 'agentSearchChats',
+   PRODUCT_SPECIFICATIONS_LISTS: 'comparisonTables',
+ };
+ 
+diff --git a/chrome/browser/resources/history/side_bar.html.ts b/chrome/browser/resources/history/side_bar.html.ts
+index 1057987aaf..a05b01370f 100644
+--- a/chrome/browser/resources/history/side_bar.html.ts
++++ b/chrome/browser/resources/history/side_bar.html.ts
+@@ -22,6 +22,20 @@ export function getHtml(this: HistorySideBarElement) {
+     $i18n{historyMenuItem}
+     <cr-ripple></cr-ripple>
+   </a>
++  <a id="agentSearchSearches" role="menuitem"
++      href="/agentSearchSearches" class="page-item cr-nav-menu-item"
++      path="agentSearchSearches" @click="${this.onItemClick_}">
++    <cr-icon icon="cr:search"></cr-icon>
++    AgentSearch searches
++    <cr-ripple></cr-ripple>
++  </a>
++  <a id="agentSearchChats" role="menuitem"
++      href="/agentSearchChats" class="page-item cr-nav-menu-item"
++      path="agentSearchChats" @click="${this.onItemClick_}">
++    <cr-icon icon="cr:chat"></cr-icon>
++    Agent Search chats
++    <cr-ripple></cr-ripple>
++  </a>
+   <a id="syncedTabs" role="menuitem" href="/syncedTabs"
+       class="page-item cr-nav-menu-item"
+       path="syncedTabs" @click="${this.onItemClick_}">
+diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
+index 56eaf2a932..f425f104cc 100644
+--- a/chrome/browser/ui/actions/chrome_action_id.h
++++ b/chrome/browser/ui/actions/chrome_action_id.h
+@@ -478,6 +478,7 @@
+     IDC_SHOW_CUSTOMIZE_CHROME_TOOLBAR) \
+   E(kActionSidePanelShowFeed) \
+   E(kActionSidePanelShowGlic) \
++  E(kActionSidePanelShowAgentSearch) \
+   E(kActionSidePanelShowContextualTasks) \
+   E(kActionSidePanelShowHistoryCluster, IDC_SHOW_HISTORY_CLUSTERS_SIDE_PANEL) \
+   E(kActionSidePanelShowHistory, IDC_SHOW_HISTORY_SIDE_PANEL) \
+diff --git a/chrome/browser/ui/browser.cc b/chrome/browser/ui/browser.cc
+index 008f02c42f..fa09184102 100644
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -528,6 +528,12 @@ GURL Browser::GetNewTabURL() const {
+           web_app::AppBrowserController::From(this)) {
+     return app_browser_controller->GetAppNewTabUrl();
+   }
++  // Normal AgentSearch windows load the registered trusted NTP directly.
++  // chrome://newtab/ is backed by the legacy controller for off-the-record
++  // profile types and is rejected when loaded by a normal profile.
++  if (!profile_->IsOffTheRecord()) {
++    return chrome::ChromeUINewTabPageURLAsGURL();
++  }
+   return chrome::ChromeUINewTabURLAsGURL();
+ }
+ 
+diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
+index 1395da71f7..fb6d1f96a8 100644
+--- a/chrome/browser/ui/browser_actions.cc
++++ b/chrome/browser/ui/browser_actions.cc
+@@ -448,6 +448,11 @@ void BrowserActions::InitializeSidePanelActions() {
+   Profile* const profile = base::to_address(profile_);
+   BrowserWindowInterface* const bwi = base::to_address(bwi_);
+ 
++  root_action_item_->AddChild(
++      SidePanelAction(SidePanelEntryId::kAgentSearch, IDS_PRODUCT_NAME,
++                      IDS_PRODUCT_NAME, omnibox::kSparkIcon,
++                      kActionSidePanelShowAgentSearch, bwi, false)
++          .Build());
+   root_action_item_->AddChild(
+       SidePanelAction(SidePanelEntryId::kBookmarks, IDS_BOOKMARK_MANAGER_TITLE,
+                       IDS_BOOKMARK_MANAGER_TITLE,
+diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
+index dc58ecafbf..cd99e9c7ee 100644
+--- a/chrome/browser/ui/browser_commands.cc
++++ b/chrome/browser/ui/browser_commands.cc
+@@ -1714,10 +1714,15 @@ void NewSplitTab(BrowserWindowInterface* browser,
+   const int active_index = tab_strip_model->active_index();
+   // In Incognito mode, we can't show the regular Split View NTP so default to
+   // the regular NTP which renders special content when in Incognito.
+-  const GURL new_tab_url = !browser->GetProfile()->IsIncognitoProfile() &&
+-                                   tab_strip_model->count() > 1
+-                               ? GURL(chrome::kChromeUISplitViewNewTabPageURL)
+-                               : chrome::ChromeUINewTabURLAsGURL();
++  GURL new_tab_url;
++  if (!browser->GetProfile()->IsIncognitoProfile() &&
++      tab_strip_model->count() > 1) {
++    new_tab_url = GURL(chrome::kChromeUISplitViewNewTabPageURL);
++  } else if (browser->GetProfile()->IsOffTheRecord()) {
++    new_tab_url = chrome::ChromeUINewTabURLAsGURL();
++  } else {
++    new_tab_url = chrome::ChromeUINewTabPageURLAsGURL();
++  }
+   tab_strip_model->delegate()->AddTabAt(
+       new_tab_url, active_index + 1, true,
+       tab_strip_model->GetTabGroupForTab(active_index),
+diff --git a/chrome/browser/ui/side_panel/side_panel_entry_id.h b/chrome/browser/ui/side_panel/side_panel_entry_id.h
+index f77bd9c8db..b56467ad6a 100644
+--- a/chrome/browser/ui/side_panel/side_panel_entry_id.h
++++ b/chrome/browser/ui/side_panel/side_panel_entry_id.h
+@@ -40,6 +40,7 @@
+   V(kMerchantTrust, kActionSidePanelShowMerchantTrust, "MerchantTrust")       \
+   V(kComments, kActionSidePanelShowComments, "Comments")                      \
+   V(kGlic, kActionSidePanelShowGlic, "Glic")                                  \
++  V(kAgentSearch, kActionSidePanelShowAgentSearch, "AgentSearch")             \
+   V(kTabsFromOtherDevices, kActionSidePanelShowTabsFromOtherDevices,          \
+     "TabsFromOtherDevices")                                                   \
+   V(kSidePanelDev, std::nullopt, "SidePanelDev")                              \
+diff --git a/chrome/browser/ui/side_panel/side_panel_entry_key_unittest.cc b/chrome/browser/ui/side_panel/side_panel_entry_key_unittest.cc
+index 91db743b4d..b491c0ad5c 100644
+--- a/chrome/browser/ui/side_panel/side_panel_entry_key_unittest.cc
++++ b/chrome/browser/ui/side_panel/side_panel_entry_key_unittest.cc
+@@ -39,6 +39,10 @@ TEST_F(SidePanelEntryKeyTest, ReturnsCorrectActionIdForEntryId) {
+       SidePanelEntryIdToActionId(SidePanelEntryId::kBookmarks);
+   EXPECT_TRUE(bookmarks_action_id.has_value());
+   EXPECT_EQ(kActionSidePanelShowBookmarks, bookmarks_action_id.value());
++  std::optional<actions::ActionId> agent_search_action_id =
++      SidePanelEntryIdToActionId(SidePanelEntryId::kAgentSearch);
++  ASSERT_TRUE(agent_search_action_id.has_value());
++  EXPECT_EQ(kActionSidePanelShowAgentSearch, agent_search_action_id.value());
+   EXPECT_FALSE(
+       SidePanelEntryIdToActionId(SidePanelEntryId::kExtension).has_value());
+ }
+diff --git a/chrome/browser/ui/toolbar/toolbar_actions_model.cc b/chrome/browser/ui/toolbar/toolbar_actions_model.cc
+index ed757723a2..d5460db431 100644
+--- a/chrome/browser/ui/toolbar/toolbar_actions_model.cc
++++ b/chrome/browser/ui/toolbar/toolbar_actions_model.cc
+@@ -144,7 +144,12 @@ void ToolbarActionsModel::OnExtensionInstalled(
+ 
+   // We can only pin extensions that have a toolbar action.
+   if (should_add_extension) {
+-    if (is_pinned_by_policy || is_pinned_by_feature) {
++    // External policy installs can report installation after the action has
++    // already been restored as pinned from the profile pref. SetActionVisibility
++    // intentionally DCHECKs unless it changes state, so keep this observer
++    // idempotent instead of attempting to pin an already-pinned action.
++    if ((is_pinned_by_policy || is_pinned_by_feature) &&
++        !IsActionPinned(extension->id())) {
+       SetActionVisibility(extension->id(), true);
+     }
+   }
+diff --git a/chrome/browser/ui/toolbar/toolbar_actions_model_unittest.cc b/chrome/browser/ui/toolbar/toolbar_actions_model_unittest.cc
+index d9699cf050..8bfab5d649 100644
+--- a/chrome/browser/ui/toolbar/toolbar_actions_model_unittest.cc
++++ b/chrome/browser/ui/toolbar/toolbar_actions_model_unittest.cc
+@@ -472,6 +472,14 @@ TEST_F(ToolbarActionsModelUnitTest,
+   EXPECT_EQ(std::make_optional(true),
+             extensions::ExtensionPrefs::Get(profile())->WasPinnedByDefault(
+                 extension->id()));
++
++  // An external policy provider may report the completed installation after
++  // the pinned action has already been restored. The repeated notification
++  // must not try to toggle an already-pinned action.
++  static_cast<extensions::ExtensionRegistryObserver*>(toolbar_model())
++      ->OnExtensionInstalled(profile(), extension, false);
++  EXPECT_THAT(toolbar_model()->pinned_action_ids(),
++              ::testing::ElementsAre(extension->id()));
+ }
+ 
+ // Test that new extension actions are NOT pinned on installation when the
+diff --git a/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc b/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
+index c4f0e629af..cc8f7026fe 100644
+--- a/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
++++ b/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
+@@ -1098,11 +1098,8 @@ void ExtensionsToolbarDesktop::UpdateContainerVisibility() {
+ }
+ 
+ bool ExtensionsToolbarDesktop::ShouldContainerBeVisible() const {
+-  // The container (and extensions-menu button) should not be visible if we have
+-  // no extensions.
+-  if (!toolbar_view_model_->HasAnyExtensions()) {
+-    return false;
+-  }
++  // AgentSearch always exposes Chromium's native extensions menu, including
++  // for a fresh profile with no installed extensions.
+ 
+   // All other display modes are constantly visible.
+   if (display_mode_ != DisplayMode::kAutoHide) {
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+index f994a992e8..adfc62e9a3 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+@@ -19,6 +19,8 @@
+ #include "chrome/browser/ui/frame/window_frame_util.h"
+ #include "chrome/browser/ui/immersive/immersive_mode_controller.h"
+ #include "chrome/browser/ui/layout_constants.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry.h"
++#include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/tabs/features.h"
+ #include "chrome/browser/ui/tabs/tab_menu_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+@@ -59,9 +61,13 @@
+ #include "ui/gfx/geometry/point.h"
+ #include "ui/views/accessible_pane_view.h"
+ #include "ui/views/actions/action_view_controller.h"
++#include "ui/views/background.h"
+ #include "ui/views/border.h"
+ #include "ui/views/cascading_property.h"
++#include "ui/views/controls/button/toggle_button.h"
++#include "ui/views/controls/label.h"
+ #include "ui/views/interaction/view_subregion_anchor.h"
++#include "ui/views/layout/box_layout.h"
+ #include "ui/views/layout/flex_layout.h"
+ #include "ui/views/layout/flex_layout_types.h"
+ #include "ui/views/view.h"
+@@ -263,6 +269,40 @@ HorizontalTabStripRegionViewOld::HorizontalTabStripRegionViewOld(
+                                views::MaximumFlexSizeRule::kUnbounded)
+           .WithOrder(3));
+ 
++  if (browser &&
++      browser->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL) {
++    agent_search_control_ = AddChildView(std::make_unique<views::View>());
++    agent_search_control_->SetLayoutManager(
++        std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal,
++            gfx::Insets::VH(0, 8), 8));
++    agent_search_control_->SetBackground(
++        views::CreateRoundedRectBackground(
++            SkColorSetARGB(0x24, 0x18, 0xA9, 0x99), 12));
++    auto* label = agent_search_control_->AddChildView(
++        std::make_unique<views::Label>(u"Agent Search"));
++    label->SetEnabledColor(SkColorSetRGB(0xE7, 0xFA, 0xF7));
++    // This label is painted over a translucent tab-strip pill. Subpixel text
++    // rendering requires an opaque backing surface and DCHECKs when the
++    // browser frame is composited into a transparent layer.
++    label->SetSubpixelRenderingEnabled(false);
++    agent_search_toggle_ = agent_search_control_->AddChildView(
++        std::make_unique<views::ToggleButton>(base::BindRepeating(
++            &HorizontalTabStripRegionViewOld::OnAgentSearchTogglePressed,
++            base::Unretained(this))));
++    agent_search_toggle_->SetIsOn(true);
++    agent_search_toggle_->SetTrackOnColor(
++        SkColorSetRGB(0x18, 0xA9, 0x99));
++    agent_search_toggle_->GetViewAccessibility().SetName(u"Agent Search");
++    agent_search_control_->SetProperty(
++        views::kCrossAxisAlignmentKey, views::LayoutAlignment::kCenter);
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(
++            &HorizontalTabStripRegionViewOld::ShowAgentSearchSidebar,
++            weak_ptr_factory_.GetWeakPtr()));
++  }
++
+   SetProperty(views::kElementIdentifierKey, kTabStripRegionElementId);
+ 
+   if (tab_strip_action_container) {
+@@ -326,6 +366,26 @@ bool HorizontalTabStripRegionViewOld::IsPositionInWindowCaption(
+   return true;
+ }
+ 
++void HorizontalTabStripRegionViewOld::OnAgentSearchTogglePressed() {
++  SidePanelUI* side_panel_ui = SidePanelUI::From(browser_view_->browser());
++  if (!side_panel_ui) {
++    return;
++  }
++  if (agent_search_toggle_->GetIsOn()) {
++    side_panel_ui->Show(SidePanelEntry::Id::kAgentSearch);
++  } else if (side_panel_ui->GetCurrentEntryId() ==
++             SidePanelEntry::Id::kAgentSearch) {
++    side_panel_ui->Close();
++  }
++}
++
++void HorizontalTabStripRegionViewOld::ShowAgentSearchSidebar() {
++  SidePanelUI* side_panel_ui = SidePanelUI::From(browser_view_->browser());
++  if (side_panel_ui && agent_search_toggle_->GetIsOn()) {
++    side_panel_ui->Show(SidePanelEntry::Id::kAgentSearch);
++  }
++}
++
+ views::View::Views HorizontalTabStripRegionViewOld::GetChildrenInZOrder() {
+   views::View::Views children;
+ 
+@@ -349,6 +409,10 @@ views::View::Views HorizontalTabStripRegionViewOld::GetChildrenInZOrder() {
+     children.emplace_back(tab_strip_action_container_.get());
+   }
+ 
++  if (agent_search_control_) {
++    children.emplace_back(agent_search_control_.get());
++  }
++
+   if (reserved_grab_handle_space_) {
+     children.emplace_back(reserved_grab_handle_space_.get());
+   }
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h
+index eb35127aad..9fd78eef48 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h
+@@ -6,6 +6,7 @@
+ #define CHROME_BROWSER_UI_VIEWS_FRAME_HORIZONTAL_TAB_STRIP_REGION_VIEW_H_
+ 
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "build/buildflag.h"
+ #include "chrome/browser/ui/tabs/tab_data.h"
+ #include "chrome/browser/ui/views/frame/base_tab_strip_region_view.h"
+@@ -22,6 +23,7 @@ class BrowserView;
+ namespace views {
+ class ActionViewController;
+ class Button;
++class ToggleButton;
+ }
+ class NewTabButton;
+ class TabStripActionContainer;
+@@ -106,6 +108,9 @@ class HorizontalTabStripRegionViewOld : public TabStripRegionView {
+   bool HasLeadingButtons() const;
+ 
+  private:
++  void OnAgentSearchTogglePressed();
++  void ShowAgentSearchSidebar();
++
+   // Updates the border padding for `new_tab_button_`.  This should be called
+   // whenever any input of the computation of the border's sizing changes.
+   void UpdateButtonBorders();
+@@ -128,6 +133,8 @@ class HorizontalTabStripRegionViewOld : public TabStripRegionView {
+   raw_ptr<TabStripComboButton> combo_button_ = nullptr;
+   raw_ptr<views::Button> new_tab_button_ = nullptr;
+   raw_ptr<TabStripControlButton> unfocus_button_ = nullptr;
++  raw_ptr<views::View> agent_search_control_ = nullptr;
++  raw_ptr<views::ToggleButton> agent_search_toggle_ = nullptr;
+ 
+   std::unique_ptr<views::ActionViewController> action_view_controller_;
+ 
+@@ -135,6 +142,8 @@ class HorizontalTabStripRegionViewOld : public TabStripRegionView {
+       ui::TouchUiController::Get()->RegisterCallback(base::BindRepeating(
+           &HorizontalTabStripRegionViewOld::UpdateButtonBorders,
+           base::Unretained(this)));
++  base::WeakPtrFactory<HorizontalTabStripRegionViewOld> weak_ptr_factory_{
++      this};
+ };
+ 
+ class HorizontalTabStripRegionViewNew : public BaseTabStripRegionView {
+diff --git a/chrome/browser/ui/views/side_panel/BUILD.gn b/chrome/browser/ui/views/side_panel/BUILD.gn
+index a19a0cf63f..1ee7615c54 100644
+--- a/chrome/browser/ui/views/side_panel/BUILD.gn
++++ b/chrome/browser/ui/views/side_panel/BUILD.gn
+@@ -9,6 +9,8 @@ import("//extensions/buildflags/buildflags.gni")
+ 
+ source_set("side_panel") {
+   sources = [
++    "agent_search/agent_search_side_panel_view.cc",
++    "agent_search/agent_search_side_panel_view.h",
+     "bookmarks/bookmarks_side_panel_coordinator.cc",
+     "bookmarks/bookmarks_side_panel_coordinator.h",
+     "comments/comments_side_panel_coordinator.cc",
+@@ -171,6 +173,7 @@ source_set("side_panel") {
+     "//net",
+     "//services/metrics/public/cpp:metrics_cpp",
+     "//services/metrics/public/cpp:ukm_builders",
++    "//services/network/public/cpp",
+     "//skia",
+     "//third_party/abseil-cpp:absl",
+     "//third_party/blink/public/common",
+diff --git a/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.cc b/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.cc
+new file mode 100644
+index 0000000000..c854b4b749
+--- /dev/null
++++ b/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.cc
+@@ -0,0 +1,732 @@
++// Copyright 2026 The AgentSearch Authors
++
++#include "chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.h"
++
++#include <limits>
++#include <memory>
++
++#include "base/functional/bind.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/logging.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/strings/escape.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/time/time.h"
++#include "chrome/app/vector_icons/vector_icons.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_scope.h"
++#include "components/prefs/pref_service.h"
++#include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/devtools_agent_host.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/storage_partition.h"
++#include "content/public/browser/web_contents.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "ui/base/models/image_model.h"
++#include "ui/base/page_transition_types.h"
++#include "ui/color/color_provider.h"
++#include "ui/events/event.h"
++#include "ui/events/keycodes/keyboard_codes.h"
++#include "ui/gfx/color_palette.h"
++#include "ui/gfx/geometry/insets.h"
++#include "ui/gfx/geometry/rounded_corners_f.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/views/background.h"
++#include "ui/views/border.h"
++#include "ui/views/controls/button/image_button.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/controls/scroll_view.h"
++#include "ui/views/controls/textfield/textfield.h"
++#include "ui/views/controls/textfield/textfield_controller.h"
++#include "ui/views/controls/throbber.h"
++#include "ui/views/layout/box_layout.h"
++#include "ui/views/view.h"
++
++namespace {
++
++constexpr SkColor kPanelBackground = SkColorSetRGB(0x1A, 0x1A, 0x1C);
++constexpr SkColor kSurface = SkColorSetRGB(0x23, 0x23, 0x26);
++constexpr SkColor kPrimaryText = SkColorSetRGB(0xEC, 0xEC, 0xEE);
++constexpr SkColor kMutedText = SkColorSetRGB(0xC4, 0xC4, 0xC8);
++constexpr char kAgentSearchChatHistoryPref[] = "agentsearch.chat_history";
++constexpr char kAgentBridgeBaseUrl[] = "http://127.0.0.1:9333";
++constexpr size_t kMaxBridgeResponseBytes = 1024 * 1024;
++constexpr int kAutoScrollTolerance = 32;
++
++std::unique_ptr<views::Label> CreateLabel(const std::u16string& text,
++                                          SkColor color,
++                                          int font_delta = 0) {
++  auto label = std::make_unique<views::Label>(text);
++  label->SetEnabledColor(color);
++  label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  if (font_delta) {
++    label->SetFontList(label->font_list().DeriveWithSizeDelta(font_delta));
++  }
++  return label;
++}
++
++std::unique_ptr<views::LabelButton> CreatePromptCard(
++    const std::u16string& text,
++    views::Button::PressedCallback callback) {
++  auto button = std::make_unique<views::LabelButton>(std::move(callback), text);
++  button->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  button->SetEnabledTextColors(kMutedText);
++  button->SetBackground(views::CreateRoundedRectBackground(kSurface, 10));
++  button->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(12, 14)));
++  button->SetPreferredSize(gfx::Size(250, 42));
++  return button;
++}
++
++class AgentSearchSidePanelView : public views::View,
++                                 public views::TextfieldController {
++ public:
++  explicit AgentSearchSidePanelView(BrowserWindowInterface* browser)
++      : browser_(browser) {
++    SetBackground(views::CreateSolidBackground(kPanelBackground));
++    SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(18, 18)));
++    auto* root_layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kVertical, gfx::Insets(), 14));
++
++    auto* header = AddChildView(std::make_unique<views::View>());
++    header->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 9));
++
++    auto* badge = header->AddChildView(
++        CreateLabel(u"✦", SkColorSetRGB(0x06, 0x17, 0x0E), 0));
++    badge->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    badge->SetVerticalAlignment(gfx::ALIGN_MIDDLE);
++    badge->SetPreferredSize(gfx::Size(24, 24));
++    badge->SetBackground(views::CreateRoundedRectBackground(
++        SkColorSetRGB(0x3D, 0xDC, 0x84), 12));
++
++    auto* header_text = header->AddChildView(std::make_unique<views::View>());
++    header_text->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kVertical, gfx::Insets(), 0));
++    auto* title = header_text->AddChildView(
++        CreateLabel(u"Agent Search", kPrimaryText, 2));
++    title->SetFontList(
++        title->font_list().DeriveWithWeight(gfx::Font::Weight::MEDIUM));
++
++    empty_state_ = AddChildView(std::make_unique<views::View>());
++    auto* empty_layout =
++        empty_state_->SetLayoutManager(std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kVertical, gfx::Insets::VH(34, 8),
++            14));
++    empty_layout->set_cross_axis_alignment(
++        views::BoxLayout::CrossAxisAlignment::kCenter);
++    root_layout->SetFlexForView(empty_state_, 1);
++
++    auto* empty_badge = empty_state_->AddChildView(
++        CreateLabel(u"✦", SkColorSetRGB(0x06, 0x17, 0x0E), 1));
++    empty_badge->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    empty_badge->SetVerticalAlignment(gfx::ALIGN_MIDDLE);
++    empty_badge->SetPreferredSize(gfx::Size(32, 32));
++    empty_badge->SetBackground(views::CreateRoundedRectBackground(
++        SkColorSetRGB(0x3D, 0xDC, 0x84), 16));
++
++    auto* prompt = empty_state_->AddChildView(
++        CreateLabel(u"How can I help you today?", kPrimaryText, 4));
++    prompt->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    prompt->SetFontList(
++        prompt->font_list().DeriveWithWeight(gfx::Font::Weight::MEDIUM));
++
++    empty_state_->AddChildView(CreatePromptCard(
++        u"Find flights under $600",
++        base::BindRepeating(&AgentSearchSidePanelView::NavigateToGoogleSearch,
++                            base::Unretained(this),
++                            u"Find flights under $600")));
++    empty_state_->AddChildView(CreatePromptCard(
++        u"Summarize this article",
++        base::BindRepeating(&AgentSearchSidePanelView::NavigateToGoogleSearch,
++                            base::Unretained(this),
++                            u"Summarize this article")));
++
++    message_scroll_view_ =
++        AddChildView(std::make_unique<views::ScrollView>());
++    message_scroll_view_->SetHorizontalScrollBarMode(
++        views::ScrollView::ScrollBarMode::kDisabled);
++    message_scroll_view_->ClipHeightTo(0, std::numeric_limits<int>::max());
++    message_scroll_view_->SetUseContentsPreferredSize(true);
++    message_list_ =
++        message_scroll_view_->SetContents(std::make_unique<views::View>());
++    message_scroll_view_->RegisterPostLayoutCallback(base::BindRepeating(
++        &AgentSearchSidePanelView::OnMessageScrollViewLayout,
++        weak_ptr_factory_.GetWeakPtr()));
++    auto* message_layout =
++        message_list_->SetLayoutManager(std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kVertical, gfx::Insets::VH(12, 0),
++            10));
++    message_layout->set_cross_axis_alignment(
++        views::BoxLayout::CrossAxisAlignment::kStretch);
++    message_scroll_view_->SetVisible(false);
++    root_layout->SetFlexForView(message_scroll_view_, 1);
++
++    auto* composer = AddChildView(std::make_unique<views::View>());
++    constexpr SkColor kComposerBackground = SkColorSetRGB(0x2A, 0x2A, 0x2D);
++    composer->SetBackground(
++        views::CreateRoundedRectBackground(kComposerBackground, 24));
++    auto* composer_layout =
++        composer->SetLayoutManager(std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal, gfx::Insets::VH(8, 14),
++            8));
++
++    input_ = composer->AddChildView(std::make_unique<views::Textfield>());
++    input_->SetPlaceholderText(u"Ask Agent Search…");
++    input_->SetBackgroundColor(kComposerBackground);
++    input_->SetBorder(nullptr);
++    input_->SetController(this);
++    composer_layout->SetFlexForView(input_, 1);
++
++    cancel_ = composer->AddChildView(std::make_unique<views::LabelButton>(
++        base::BindRepeating(&AgentSearchSidePanelView::OnCancelPressed,
++                            weak_ptr_factory_.GetWeakPtr()),
++        u"Cancel"));
++    cancel_->SetEnabledTextColors(kMutedText);
++    cancel_->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(6, 8)));
++    cancel_->SetVisible(false);
++
++    send_ = composer->AddChildView(
++        std::make_unique<views::ImageButton>(base::BindRepeating(
++            &AgentSearchSidePanelView::OnSendPressed,
++            weak_ptr_factory_.GetWeakPtr())));
++    send_->SetPreferredSize(gfx::Size(28, 28));
++    send_->SetImageHorizontalAlignment(views::ImageButton::ALIGN_CENTER);
++    send_->SetImageVerticalAlignment(views::ImageButton::ALIGN_MIDDLE);
++    send_->SetBorder(nullptr);
++    send_->GetViewAccessibility().SetName(u"Send");
++    UpdateSendButtonState();
++
++    auto* trust = AddChildView(CreateLabel(
++        u"Purchases always ask first", SkColorSetRGB(0x6A, 0x6A, 0x70), -2));
++    trust->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++
++    RestoreChatHistory();
++  }
++
++  AgentSearchSidePanelView(const AgentSearchSidePanelView&) = delete;
++  AgentSearchSidePanelView& operator=(const AgentSearchSidePanelView&) = delete;
++  ~AgentSearchSidePanelView() override = default;
++
++ private:
++  void ContentsChanged(views::Textfield* sender,
++                       const std::u16string& new_contents) override {
++    if (sender == input_) {
++      UpdateSendButtonState();
++    }
++  }
++
++  bool HandleKeyEvent(views::Textfield* sender,
++                      const ui::KeyEvent& key_event) override {
++    if (sender == input_ && key_event.type() == ui::EventType::kKeyPressed &&
++        key_event.key_code() == ui::VKEY_RETURN) {
++      OnSendPressed();
++      return true;
++    }
++    return false;
++  }
++
++  void OnSendPressed() {
++    if (task_active_) {
++      return;
++    }
++    std::u16string message(input_->GetText());
++    base::TrimWhitespace(message, base::TRIM_ALL, &message);
++    if (message.empty()) {
++      return;
++    }
++
++    empty_state_->SetVisible(false);
++    message_scroll_view_->SetVisible(true);
++    AppendMessage(message, true, true);
++    input_->SetText(std::u16string());
++    run_has_assistant_message_ = false;
++    SetTaskActive(true);
++    ShowWorkingIndicator();
++
++    StartAgentTask(message);
++  }
++
++  void OnCancelPressed() {
++    if (!task_active_ || run_id_.empty()) {
++      return;
++    }
++    cancel_->SetEnabled(false);
++    bridge_loader_.reset();
++    SendBridgeRequest(
++        "POST", "/v1/tasks/" + run_id_ + "/cancel", std::nullopt,
++        base::BindOnce(&AgentSearchSidePanelView::OnCancelSent,
++                       weak_ptr_factory_.GetWeakPtr()));
++  }
++
++  void OnCancelSent(std::optional<base::DictValue> response) {
++    if (!response || !response->FindBool("ok").value_or(false)) {
++      const std::string* error =
++          response ? response->FindString("error") : nullptr;
++      AppendMessage(
++          base::UTF8ToUTF16(
++              error ? *error
++                    : "The cancellation request could not be delivered."),
++          false, true);
++      cancel_->SetEnabled(true);
++      return;
++    }
++    PollAgentEvents();
++  }
++
++  void AppendMessage(const std::u16string& text, bool from_user, bool persist) {
++    const bool should_scroll_to_latest = IsNearBottom();
++    auto label = CreateLabel(text, from_user ? kPrimaryText : kMutedText, 0);
++    label->SetMultiLine(true);
++    label->SetMaximumWidth(250);
++    label->SetLineHeight(19);
++    label->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(8, 10)));
++    label->SetBackground(views::CreateRoundedRectBackground(
++        from_user ? SkColorSetRGB(0x2A, 0x2A, 0x2D)
++                  : SkColorSetRGB(0x23, 0x23, 0x26),
++        10));
++    message_list_->AddChildView(std::move(label));
++    message_list_->InvalidateLayout();
++    if (should_scroll_to_latest) {
++      ScheduleScrollToLatestMessage();
++    }
++    if (persist) {
++      PersistMessage(text, from_user);
++    }
++  }
++
++  void ShowWorkingIndicator() {
++    if (working_indicator_) {
++      return;
++    }
++    const bool should_scroll_to_latest = IsNearBottom();
++    auto indicator = std::make_unique<views::View>();
++    indicator->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(8, 10)));
++    indicator->SetBackground(views::CreateRoundedRectBackground(kSurface, 10));
++    indicator->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 8));
++    auto* throbber = indicator->AddChildView(std::make_unique<views::Throbber>());
++    throbber->SetPreferredSize(gfx::Size(16, 16));
++    throbber->Start();
++    indicator->AddChildView(CreateLabel(u"Working…", kMutedText));
++    working_indicator_ = message_list_->AddChildView(std::move(indicator));
++    message_list_->InvalidateLayout();
++    if (should_scroll_to_latest) {
++      ScheduleScrollToLatestMessage();
++    }
++  }
++
++  void RemoveWorkingIndicator() {
++    if (!working_indicator_) {
++      return;
++    }
++    // Clear the BackupRefPtr while the child is still alive. RemoveChildViewT()
++    // returns an owning unique_ptr that is destroyed at the end of its full
++    // expression; releasing working_indicator_ after that destruction is
++    // diagnosed as a dangling raw_ptr release.
++    views::View* indicator = working_indicator_;
++    working_indicator_ = nullptr;
++    message_list_->RemoveChildViewT(indicator);
++    message_list_->InvalidateLayout();
++  }
++
++  void StartAgentTask(const std::u16string& task) {
++    tabs::TabInterface* active_tab = browser_->GetActiveTabInterface();
++    if (!active_tab) {
++      RemoveWorkingIndicator();
++      AppendMessage(u"No active browser tab is available.", false, true);
++      SetTaskActive(false);
++      return;
++    }
++    scoped_refptr<content::DevToolsAgentHost> agent_host =
++        content::DevToolsAgentHost::GetOrCreateFor(active_tab->GetContents());
++    base::DictValue request;
++    request.Set("task", base::UTF16ToUTF8(task));
++    request.Set("targetId", agent_host->GetId());
++    SendBridgeRequest("POST", "/v1/tasks", std::move(request),
++                      base::BindOnce(&AgentSearchSidePanelView::OnTaskStarted,
++                                     weak_ptr_factory_.GetWeakPtr()));
++  }
++
++  using BridgeCallback =
++      base::OnceCallback<void(std::optional<base::DictValue>)>;
++
++  void SendBridgeRequest(std::string method,
++                         std::string path,
++                         std::optional<base::DictValue> body,
++                         BridgeCallback callback) {
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = GURL(std::string(kAgentBridgeBaseUrl) + path);
++    request->method = method;
++    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++    static constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
++        net::DefineNetworkTrafficAnnotation("agentsearch_agent_bridge", R"(
++          semantics {
++            sender: "AgentSearch native agent sidebar"
++            description: "Sends an explicitly submitted agent task and reads its progress from the loopback-only AgentSearch bridge."
++            trigger: "The user submits a task or answers a purchase confirmation."
++            data: "Task text, a DevTools target identifier, and purchase decisions."
++            destination: LOCAL
++          }
++          policy {
++            cookies_allowed: NO
++            setting: "This is initiated by the AgentSearch sidebar."
++            policy_exception_justification: "The destination is a loopback companion process."
++          })");
++    bridge_loader_ = network::SimpleURLLoader::Create(std::move(request),
++                                                      kTrafficAnnotation);
++    bridge_loader_->SetAllowHttpErrorResults(true);
++    if (body) {
++      std::string json;
++      base::JSONWriter::Write(*body, &json);
++      bridge_loader_->AttachStringForUpload(json, "application/json");
++    }
++    bridge_loader_->DownloadToString(
++        browser_->GetProfile()
++            ->GetDefaultStoragePartition()
++            ->GetURLLoaderFactoryForBrowserProcess()
++            .get(),
++        base::BindOnce(&AgentSearchSidePanelView::OnBridgeResponse,
++                       weak_ptr_factory_.GetWeakPtr(), std::move(callback)),
++        kMaxBridgeResponseBytes);
++  }
++
++  void OnBridgeResponse(BridgeCallback callback,
++                        std::optional<std::string> response_body) {
++    bridge_loader_.reset();
++    if (!response_body) {
++      std::move(callback).Run(std::nullopt);
++      return;
++    }
++    std::optional<base::Value> value =
++        base::JSONReader::Read(*response_body, base::JSON_PARSE_RFC);
++    if (!value || !value->is_dict()) {
++      std::move(callback).Run(std::nullopt);
++      return;
++    }
++    std::move(callback).Run(std::move(*value).TakeDict());
++  }
++
++  void OnTaskStarted(std::optional<base::DictValue> response) {
++    if (!response) {
++      RemoveWorkingIndicator();
++      AppendMessage(
++          u"Agent bridge unavailable. Start it with `npm start` in "
++          u"agent-bridge.",
++          false, true);
++      SetTaskActive(false);
++      return;
++    }
++    const std::string* run_id = response->FindString("runId");
++    if (!run_id) {
++      RemoveWorkingIndicator();
++      const std::string* error = response->FindString("error");
++      AppendMessage(base::UTF8ToUTF16(error ? *error : "Bridge rejected task."),
++                    false, true);
++      SetTaskActive(false);
++      return;
++    }
++    run_id_ = *run_id;
++    last_event_sequence_ = 0;
++    cancel_->SetVisible(true);
++    cancel_->SetEnabled(true);
++    PollAgentEvents();
++  }
++
++  void PollAgentEvents() {
++    if (run_id_.empty() || bridge_loader_) {
++      return;
++    }
++    SendBridgeRequest("GET",
++                      "/v1/tasks/" + run_id_ + "/events?after=" +
++                          base::NumberToString(last_event_sequence_),
++                      std::nullopt,
++                      base::BindOnce(&AgentSearchSidePanelView::OnAgentEvents,
++                                     weak_ptr_factory_.GetWeakPtr()));
++  }
++
++  void OnAgentEvents(std::optional<base::DictValue> response) {
++    if (!response) {
++      RemoveWorkingIndicator();
++      AppendMessage(u"Lost contact with the agent bridge.", false, true);
++      FinishRun();
++      return;
++    }
++    const base::ListValue* events = response->FindList("events");
++    std::optional<std::u16string> terminal_message;
++    if (events) {
++      for (const base::Value& value : *events) {
++        const base::DictValue* event = value.GetIfDict();
++        if (!event) {
++          continue;
++        }
++        last_event_sequence_ = std::max(last_event_sequence_,
++                                        event->FindInt("sequence").value_or(0));
++        const std::string* type = event->FindString("type");
++        const std::string* text = event->FindString("text");
++        if (!type || !text) {
++          continue;
++        }
++        if (*type == "confirmation_required") {
++          RemoveWorkingIndicator();
++          const std::string* confirmation_id =
++              event->FindString("confirmationId");
++          if (confirmation_id) {
++            AppendPurchaseConfirmation(base::UTF8ToUTF16(*text),
++                                       *confirmation_id);
++          }
++        } else if (*type == "assistant_message") {
++          AppendMessage(base::UTF8ToUTF16(*text), false, true);
++          run_has_assistant_message_ = true;
++        } else if (*type == "error" || *type == "cancelled") {
++          terminal_message = base::UTF8ToUTF16(*text);
++        }
++      }
++    }
++    const std::string* status = response->FindString("status");
++    if (!status) {
++      RemoveWorkingIndicator();
++      AppendMessage(u"The agent bridge returned an invalid task status.",
++                    false, true);
++      FinishRun();
++    } else if (*status == "running") {
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&AgentSearchSidePanelView::PollAgentEvents,
++                         weak_ptr_factory_.GetWeakPtr()),
++          base::Milliseconds(400));
++    } else if (*status != "awaiting_confirmation") {
++      RemoveWorkingIndicator();
++      if (*status == "done" && !run_has_assistant_message_) {
++        AppendMessage(u"Done", false, true);
++      } else if (terminal_message) {
++        AppendMessage(*terminal_message, false, true);
++      } else if (*status == "denied") {
++        AppendMessage(u"Action denied. Nothing was performed.", false, true);
++      }
++      FinishRun();
++    }
++  }
++
++  void AppendPurchaseConfirmation(const std::u16string& summary,
++                                  const std::string& confirmation_id) {
++    const bool should_scroll_to_latest = IsNearBottom();
++    auto card = std::make_unique<views::View>();
++    card->SetBackground(views::CreateRoundedRectBackground(kSurface, 10));
++    card->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(10, 10)));
++    card->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kVertical, gfx::Insets(), 8));
++    auto* label = card->AddChildView(CreateLabel(summary, kPrimaryText));
++    label->SetMultiLine(true);
++    label->SetMaximumWidth(230);
++    auto* buttons = card->AddChildView(std::make_unique<views::View>());
++    buttons->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 8));
++    auto* approve = buttons->AddChildView(CreatePromptCard(
++        u"Approve", base::BindRepeating(
++                        &AgentSearchSidePanelView::ResolvePurchaseConfirmation,
++                        weak_ptr_factory_.GetWeakPtr(), confirmation_id, true)));
++    auto* deny = buttons->AddChildView(CreatePromptCard(
++        u"Deny", base::BindRepeating(
++                     &AgentSearchSidePanelView::ResolvePurchaseConfirmation,
++                     weak_ptr_factory_.GetWeakPtr(), confirmation_id, false)));
++    approve->SetPreferredSize(gfx::Size(105, 38));
++    deny->SetPreferredSize(gfx::Size(105, 38));
++    confirmation_buttons_ = buttons;
++    displayed_confirmation_id_ = confirmation_id;
++    message_list_->AddChildView(std::move(card));
++    message_list_->InvalidateLayout();
++    if (should_scroll_to_latest) {
++      ScheduleScrollToLatestMessage();
++    }
++    PersistMessage(summary, false);
++  }
++
++  void ResolvePurchaseConfirmation(std::string confirmation_id, bool approved) {
++    if (run_id_.empty() || confirmation_id != displayed_confirmation_id_) {
++      return;
++    }
++    if (confirmation_buttons_) {
++      for (views::View* button : confirmation_buttons_->children()) {
++        button->SetEnabled(false);
++      }
++    }
++    base::DictValue request;
++    request.Set("confirmationId", confirmation_id);
++    request.Set("approved", approved);
++    SendBridgeRequest(
++        "POST", "/v1/tasks/" + run_id_ + "/confirmation", std::move(request),
++        base::BindOnce(&AgentSearchSidePanelView::OnConfirmationSent,
++                       weak_ptr_factory_.GetWeakPtr(), approved));
++  }
++
++  void OnConfirmationSent(bool approved,
++                          std::optional<base::DictValue> response) {
++    if (!response || !response->FindBool("ok").value_or(false)) {
++      const std::string* error =
++          response ? response->FindString("error") : nullptr;
++      AppendMessage(
++          base::UTF8ToUTF16(
++              error ? *error : "The action decision could not be delivered."),
++          false, true);
++      PollAgentEvents();
++      return;
++    }
++    displayed_confirmation_id_.clear();
++    confirmation_buttons_ = nullptr;
++    if (approved) {
++      ShowWorkingIndicator();
++    }
++    PollAgentEvents();
++  }
++
++  void SetTaskActive(bool active) {
++    task_active_ = active;
++    input_->SetEnabled(!active);
++    cancel_->SetVisible(active && !run_id_.empty());
++    if (!active) {
++      cancel_->SetEnabled(true);
++    }
++    UpdateSendButtonState();
++  }
++
++  void FinishRun() {
++    run_id_.clear();
++    displayed_confirmation_id_.clear();
++    confirmation_buttons_ = nullptr;
++    SetTaskActive(false);
++  }
++
++  void PersistMessage(const std::u16string& text, bool from_user) {
++    PrefService* prefs = browser_->GetProfile()->GetPrefs();
++    base::ListValue history =
++        prefs->GetList(kAgentSearchChatHistoryPref).Clone();
++    base::DictValue entry;
++    entry.Set("role", from_user ? "user" : "agent");
++    entry.Set("text", base::UTF16ToUTF8(text));
++    entry.Set(
++        "timestamp",
++        static_cast<double>(base::Time::Now().InMillisecondsSinceUnixEpoch()));
++    history.Append(std::move(entry));
++    while (history.size() > 500u) {
++      history.erase(history.begin());
++    }
++    prefs->SetList(kAgentSearchChatHistoryPref, std::move(history));
++    LOG(INFO) << "AgentSearch chat history: wrote message; count="
++              << prefs->GetList(kAgentSearchChatHistoryPref).size();
++  }
++
++  void RestoreChatHistory() {
++    const base::ListValue& history =
++        browser_->GetProfile()->GetPrefs()->GetList(
++            kAgentSearchChatHistoryPref);
++    if (history.empty()) {
++      return;
++    }
++    empty_state_->SetVisible(false);
++    message_scroll_view_->SetVisible(true);
++    for (const base::Value& value : history) {
++      const base::DictValue* entry = value.GetIfDict();
++      if (!entry) {
++        continue;
++      }
++      const std::string* text = entry->FindString("text");
++      const std::string* role = entry->FindString("role");
++      if (text && role) {
++        AppendMessage(base::UTF8ToUTF16(*text), *role == "user", false);
++      }
++    }
++  }
++
++  void UpdateSendButtonState() {
++    const bool has_input = input_ && !input_->GetText().empty() && !task_active_;
++    const SkColor background = has_input ? SkColorSetRGB(0x3D, 0xDC, 0x84)
++                                         : SkColorSetRGB(0x3A, 0x3A, 0x3E);
++    const SkColor icon = has_input ? SkColorSetRGB(0x06, 0x17, 0x0E)
++                                   : SkColorSetRGB(0x5A, 0x5A, 0x60);
++    send_->SetBackground(views::CreateRoundedRectBackground(background, 14));
++    send_->SetImageModel(
++        views::Button::STATE_NORMAL,
++        ui::ImageModel::FromVectorIcon(kArrowUpwardIcon, icon, 15));
++    send_->SetImageModel(
++        views::Button::STATE_DISABLED,
++        ui::ImageModel::FromVectorIcon(kArrowUpwardIcon, icon, 15));
++    send_->SetEnabled(has_input);
++    send_->SchedulePaint();
++  }
++
++  void ScheduleScrollToLatestMessage() {
++    scroll_to_latest_pending_ = true;
++    message_scroll_view_->InvalidateLayout();
++  }
++
++  bool IsNearBottom() const {
++    if (!message_scroll_view_ || !message_list_ ||
++        message_list_->children().empty()) {
++      return true;
++    }
++    const gfx::Rect visible_rect = message_scroll_view_->GetVisibleRect();
++    return visible_rect.bottom() >=
++           message_list_->height() - kAutoScrollTolerance;
++  }
++
++  void OnMessageScrollViewLayout(views::ScrollView* scroll_view) {
++    if (scroll_to_latest_pending_ && scroll_view->GetVisible() &&
++        !message_list_->children().empty()) {
++      scroll_to_latest_pending_ = false;
++      message_list_->children().back()->ScrollViewToVisible();
++    }
++  }
++
++  void NavigateToGoogleSearch(std::u16string query) {
++    base::TrimWhitespace(query, base::TRIM_ALL, &query);
++    if (query.empty()) {
++      return;
++    }
++
++    tabs::TabInterface* active_tab = browser_->GetActiveTabInterface();
++    if (!active_tab) {
++      return;
++    }
++
++    const std::string escaped_query =
++        base::EscapeQueryParamValue(base::UTF16ToUTF8(query), true);
++    content::NavigationController::LoadURLParams params(GURL(
++        "https://www.google.com/search?q=" + escaped_query));
++    params.transition_type = ui::PAGE_TRANSITION_GENERATED;
++    active_tab->GetContents()->GetController().LoadURLWithParams(params);
++  }
++
++  raw_ptr<BrowserWindowInterface> browser_;
++  raw_ptr<views::View> empty_state_ = nullptr;
++  raw_ptr<views::ScrollView> message_scroll_view_ = nullptr;
++  raw_ptr<views::View> message_list_ = nullptr;
++  raw_ptr<views::Textfield> input_ = nullptr;
++  raw_ptr<views::LabelButton> cancel_ = nullptr;
++  raw_ptr<views::ImageButton> send_ = nullptr;
++  raw_ptr<views::View> confirmation_buttons_ = nullptr;
++  raw_ptr<views::View> working_indicator_ = nullptr;
++  std::unique_ptr<network::SimpleURLLoader> bridge_loader_;
++  std::string run_id_;
++  std::string displayed_confirmation_id_;
++  int last_event_sequence_ = 0;
++  bool task_active_ = false;
++  bool run_has_assistant_message_ = false;
++  bool scroll_to_latest_pending_ = false;
++  base::WeakPtrFactory<AgentSearchSidePanelView> weak_ptr_factory_{this};
++};
++
++}  // namespace
++
++SidePanelNativeView CreateAgentSearchSidePanelView(SidePanelEntryScope& scope) {
++  return std::make_unique<AgentSearchSidePanelView>(
++      &scope.GetBrowserWindowInterface());
++}
+diff --git a/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.h b/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.h
+new file mode 100644
+index 0000000000..f106c0ae57
+--- /dev/null
++++ b/chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.h
+@@ -0,0 +1,15 @@
++// Copyright 2026 The AgentSearch Authors
++
++#ifndef CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_AGENT_SEARCH_AGENT_SEARCH_SIDE_PANEL_VIEW_H_
++#define CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_AGENT_SEARCH_AGENT_SEARCH_SIDE_PANEL_VIEW_H_
++
++#include <memory>
++
++#include "chrome/browser/ui/side_panel/side_panel_native_view.h"
++
++class SidePanelEntryScope;
++
++SidePanelNativeView CreateAgentSearchSidePanelView(
++    SidePanelEntryScope& scope);
++
++#endif  // CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_AGENT_SEARCH_AGENT_SEARCH_SIDE_PANEL_VIEW_H_
+diff --git a/chrome/browser/ui/views/side_panel/side_panel_helper.cc b/chrome/browser/ui/views/side_panel/side_panel_helper.cc
+index 414f120c64..5aec62e207 100644
+--- a/chrome/browser/ui/views/side_panel/side_panel_helper.cc
++++ b/chrome/browser/ui/views/side_panel/side_panel_helper.cc
+@@ -13,6 +13,7 @@
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/views/side_panel/bookmarks/bookmarks_side_panel_coordinator.h"
++#include "chrome/browser/ui/views/side_panel/agent_search/agent_search_side_panel_view.h"
+ #include "chrome/browser/ui/views/side_panel/comments/comments_side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/side_panel/history/history_side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/side_panel/history_clusters/history_clusters_side_panel_coordinator.h"
+@@ -27,6 +28,14 @@
+ void SidePanelHelper::PopulateGlobalEntries(
+     BrowserWindowInterface* browser,
+     SidePanelRegistry* window_registry) {
++  auto agent_search_entry = std::make_unique<SidePanelEntry>(
++      SidePanelEntry::Key(SidePanelEntry::Id::kAgentSearch),
++      base::BindRepeating(&CreateAgentSearchSidePanelView),
++      base::NullCallback());
++  agent_search_entry->set_should_show_header(false);
++  agent_search_entry->set_should_show_ephemerally_in_toolbar(false);
++  window_registry->Register(std::move(agent_search_entry));
++
+   // Add reading list.
+   ReadingListSidePanelCoordinator::From(browser)->CreateAndRegisterEntry(
+       window_registry);
+diff --git a/chrome/browser/ui/webui/history/history_ui.cc b/chrome/browser/ui/webui/history/history_ui.cc
+index 9f4280fa27..47529a7210 100644
+--- a/chrome/browser/ui/webui/history/history_ui.cc
++++ b/chrome/browser/ui/webui/history/history_ui.cc
+@@ -12,7 +12,10 @@
+ #include "base/command_line.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
++#include "base/json/json_writer.h"
++#include "base/logging.h"
+ #include "base/memory/ref_counted_memory.h"
++#include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/values.h"
+@@ -72,6 +75,7 @@
+ #include "components/sync/base/features.h"
+ #include "content/public/browser/web_ui.h"
+ #include "content/public/browser/web_ui_data_source.h"
++#include "content/public/browser/web_ui_message_handler.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/resource/resource_bundle.h"
+ #include "ui/base/webui/web_ui_util.h"
+@@ -84,6 +88,44 @@
+ 
+ namespace {
+ 
++constexpr char kAgentSearchSearchHistoryPref[] =
++    "agentsearch.search_history";
++constexpr char kAgentSearchChatHistoryPref[] = "agentsearch.chat_history";
++
++class AgentSearchHistoryMessageHandler
++    : public content::WebUIMessageHandler {
++ public:
++  explicit AgentSearchHistoryMessageHandler(Profile* profile)
++      : profile_(profile) {}
++
++  void RegisterMessages() override {
++    web_ui()->RegisterMessageCallback(
++        "getAgentSearchHistory",
++        base::BindRepeating(
++            &AgentSearchHistoryMessageHandler::HandleGetHistory,
++            base::Unretained(this)));
++  }
++
++ private:
++  void HandleGetHistory(const base::ListValue& args) {
++    AllowJavascript();
++    if (args.size() != 1u || !args[0].is_string()) {
++      return;
++    }
++    base::DictValue result;
++    result.Set("searches",
++               profile_->GetPrefs()
++                   ->GetList(kAgentSearchSearchHistoryPref)
++                   .Clone());
++    result.Set("chat", profile_->GetPrefs()
++                           ->GetList(kAgentSearchChatHistoryPref)
++                           .Clone());
++    ResolveJavascriptCallback(args[0], std::move(result));
++  }
++
++  raw_ptr<Profile> profile_;
++};
++
+ content::WebUIDataSource* CreateAndAddHistoryUIHTMLSource(Profile* profile) {
+   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+       profile, chrome::kChromeUIHistoryHost);
+@@ -98,6 +140,20 @@ content::WebUIDataSource* CreateAndAddHistoryUIHTMLSource(Profile* profile) {
+ 
+   HistoryUtil::PopulateCommonSourceForHistory(source, profile);
+ 
++  const base::ListValue& agentsearch_search_history =
++      profile->GetPrefs()->GetList(kAgentSearchSearchHistoryPref);
++  const base::ListValue& agentsearch_chat_history =
++      profile->GetPrefs()->GetList(kAgentSearchChatHistoryPref);
++  source->AddString(
++      "agentSearchSearchHistoryJson",
++      base::WriteJson(agentsearch_search_history).value_or("[]"));
++  source->AddString(
++      "agentSearchChatHistoryJson",
++      base::WriteJson(agentsearch_chat_history).value_or("[]"));
++  LOG(INFO) << "AgentSearch history WebUI load: searches="
++            << agentsearch_search_history.size()
++            << " chats=" << agentsearch_chat_history.size();
++
+   static constexpr webui::LocalizedString kStrings[] = {
+       // Localized strings (alphabetical order).
+       {"compareHistoryEmpty", IDS_COMPARE_HISTORY_EMPTY},
+@@ -279,6 +335,8 @@ HistoryUI::HistoryUI(content::WebUI* web_ui)
+ 
+   web_ui->AddMessageHandler(std::make_unique<webui::NavigationHandler>());
+   web_ui->AddMessageHandler(std::make_unique<MetricsHandler>());
++  web_ui->AddMessageHandler(
++      std::make_unique<AgentSearchHistoryMessageHandler>(profile));
+ 
+   web_ui->AddMessageHandler(
+       std::make_unique<HistoryLoginHandler>(base::BindRepeating(
+-- 
+2.54.0
+
